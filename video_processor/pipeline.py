@@ -63,14 +63,13 @@ def process_video(
             is_detect = (frame_idx % detection_interval == 0)
 
             if is_detect:
+                current_detect_boxes = detect_boxes(
+                    face_model, plate_model, frame, conf, width, height
+                )
                 if segment:
                     flush_segment(segment, prev_detect_boxes, current_detect_boxes,
                                   writer, blur_strength, segment_start_idx,
                                   debug_writer, csv_file)
-
-                current_detect_boxes = detect_boxes(
-                    face_model, plate_model, frame, conf, width, height
-                )
                 trackers = init_trackers(frame, current_detect_boxes)
                 segment = [(frame, current_detect_boxes)]
                 prev_detect_boxes = current_detect_boxes
