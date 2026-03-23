@@ -1,0 +1,5 @@
+ultralytics
+opencv-python
+huggingface_hub
+Pillow
+tqdm

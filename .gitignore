@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Model weights (download at runtime)
+*.pt
+
+# Data / output images
+data/
+
+# OS
+.DS_Store
