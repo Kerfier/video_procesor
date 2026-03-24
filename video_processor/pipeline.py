@@ -7,8 +7,8 @@ from ultralytics import YOLO
 
 from .audio import mux_audio
 from .detection import detect_boxes
-from .segment_writer import flush_final_segment, flush_segment
-from .tracking import init_trackers, update_trackers
+from .frame_ops import apply_blur, draw_debug_frame
+from .track_manager import TrackManager
 
 
 def process_video(
@@ -45,14 +45,10 @@ def process_video(
         debug_writer = cv2.VideoWriter(str(debug_path), fourcc, fps, (width, height))
         csv_path = input_path.parent / f"debug_{input_path.stem}.csv"
         csv_file = open(csv_path, "w")
-        csv_file.write("frame,mode,box_idx,x1,y1,x2,y2\n")
+        csv_file.write("frame,mode,track_id,category,x1,y1,x2,y2\n")
 
-    segment: list = []
-    prev_detect_boxes: list = []
-    current_detect_boxes: list = []
-    trackers: list = []
+    track_mgr = TrackManager()
     frame_idx = 0
-    segment_start_idx = 0
 
     with tqdm(total=total_frames, unit="frame", desc=input_path.name) as pbar:
         while True:
@@ -63,29 +59,33 @@ def process_video(
             is_detect = (frame_idx % detection_interval == 0)
 
             if is_detect:
-                current_detect_boxes = detect_boxes(
+                face_boxes, plate_boxes = detect_boxes(
                     face_model, plate_model, frame, conf, width, height
                 )
-                if segment:
-                    flush_segment(segment, prev_detect_boxes, current_detect_boxes,
-                                  writer, blur_strength, segment_start_idx,
-                                  debug_writer, csv_file)
-                trackers = init_trackers(frame, current_detect_boxes)
-                segment = [(frame, current_detect_boxes)]
-                prev_detect_boxes = current_detect_boxes
-                segment_start_idx = frame_idx
+                track_mgr.update_detection(frame, face_boxes, plate_boxes)
             else:
-                tracked = update_trackers(frame, trackers)
-                segment.append((frame, tracked))
+                track_mgr.update_tracking(frame)
+
+            boxes = track_mgr.get_boxes()
+            writer.write(apply_blur(frame, boxes, blur_strength))
+
+            if debug_writer is not None:
+                debug_info = track_mgr.get_debug_info(is_detect)
+                debug_boxes = [d[0] for d in debug_info]
+                mode = "DETECT" if is_detect else "TRACK"
+                debug_writer.write(draw_debug_frame(frame, debug_boxes, frame_idx, mode))
+                if csv_file is not None:
+                    for box, track_id, category, box_mode in debug_info:
+                        x1, y1, x2, y2 = box
+                        csv_file.write(
+                            f"{frame_idx},{box_mode},{track_id},{category},{x1},{y1},{x2},{y2}\n"
+                        )
 
             frame_idx += 1
             pbar.update(1)
 
         pbar.n = pbar.total
         pbar.refresh()
-
-    flush_final_segment(segment, prev_detect_boxes, writer, blur_strength,
-                        segment_start_idx, debug_writer, csv_file)
 
     cap.release()
     writer.release()

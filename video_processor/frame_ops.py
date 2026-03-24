@@ -5,22 +5,9 @@ from .detection import Box
 
 _DEBUG_COLORS = {
     "DETECT": (0, 255, 0),
-    "INTERPOLATE": (0, 255, 255),
     "TRACK": (255, 100, 0),
+    "COAST": (0, 200, 255),
 }
-
-
-def interpolate_boxes(
-    boxes_start: list[Box],
-    boxes_end: list[Box],
-    alpha: float,
-) -> list[Box]:
-    """Linearly interpolate between two equal-length sets of bounding boxes."""
-    result = []
-    for (s, e) in zip(boxes_start, boxes_end):
-        interp = tuple(int(round(s[i] * (1 - alpha) + e[i] * alpha)) for i in range(4))
-        result.append(interp)
-    return result
 
 
 def draw_debug_frame(
@@ -52,12 +39,29 @@ def apply_blur(
     out = frame.copy()
     h, w = out.shape[:2]
     for (x1, y1, x2, y2) in boxes:
-        x1 = max(0, x1)
-        y1 = max(0, y1)
-        x2 = min(w, x2)
-        y2 = min(h, y2)
+        # Expand box by 20%
+        bw = x2 - x1
+        bh = y2 - y1
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        bw *= 1.2
+        bh *= 1.2
+        x1 = max(0, int(cx - bw / 2))
+        y1 = max(0, int(cy - bh / 2))
+        x2 = min(w, int(cx + bw / 2))
+        y2 = min(h, int(cy + bh / 2))
         if x2 <= x1 or y2 <= y1:
             continue
         roi = out[y1:y2, x1:x2]
-        out[y1:y2, x1:x2] = cv2.GaussianBlur(roi, (k, k), 0)
+        blurred_roi = cv2.GaussianBlur(roi, (k, k), 0)
+        # Create rounded rectangle mask
+        mask = np.zeros((y2 - y1, x2 - x1), dtype=np.uint8)
+        radius = int(min(bw, bh) * 0.15)
+        cv2.rectangle(mask, (radius, 0), (x2 - x1 - radius, y2 - y1), 255, -1)
+        cv2.rectangle(mask, (0, radius), (x2 - x1, y2 - y1 - radius), 255, -1)
+        cv2.circle(mask, (radius, radius), radius, 255, -1)
+        cv2.circle(mask, (x2 - x1 - radius, radius), radius, 255, -1)
+        cv2.circle(mask, (radius, y2 - y1 - radius), radius, 255, -1)
+        cv2.circle(mask, (x2 - x1 - radius, y2 - y1 - radius), radius, 255, -1)
+        mask_3c = mask[:, :, np.newaxis] / 255.0
+        out[y1:y2, x1:x2] = (blurred_roi * mask_3c + roi * (1 - mask_3c)).astype(np.uint8)
     return out

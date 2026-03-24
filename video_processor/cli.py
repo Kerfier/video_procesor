@@ -20,8 +20,8 @@ def parse_args() -> argparse.Namespace:
         help="Gaussian blur kernel size, must be odd (default: 51).",
     )
     parser.add_argument(
-        "--conf", type=float, default=0.2,
-        help="Detection confidence threshold (default: 0.2).",
+        "--conf", type=float, default=0.25,
+        help="Detection confidence threshold (default: 0.25).",
     )
     parser.add_argument(
         "--debug", action="store_true",
