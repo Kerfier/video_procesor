@@ -1,16 +1,15 @@
 from pathlib import Path
 
-from huggingface_hub import hf_hub_download
+from open_image_models import LicensePlateDetector
 from ultralytics import YOLO
 
 
-def load_models() -> tuple[YOLO, YOLO]:
-    """Load face and license plate YOLO models."""
+def load_models() -> tuple[YOLO, LicensePlateDetector]:
+    """Load face and license plate detection models."""
     model_dir = Path(__file__).parent.parent
-    face_model = YOLO(str(model_dir / "yolov11n-face.pt"))
-    plate_model_path = hf_hub_download(
-        repo_id="morsetechlab/yolov11-license-plate-detection",
-        filename="license-plate-finetune-v1n.pt",
+    face_model = YOLO(str(model_dir / "yolov12n-face.onnx"))
+
+    plate_model = LicensePlateDetector(
+        detection_model="yolo-v9-t-256-license-plate-end2end",
     )
-    plate_model = YOLO(plate_model_path)
     return face_model, plate_model

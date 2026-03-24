@@ -1,5 +1,5 @@
 ultralytics
-opencv-python
-huggingface_hub
+opencv-contrib-python
+open-image-models[onnx]
 Pillow
 tqdm

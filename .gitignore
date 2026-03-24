@@ -11,9 +11,11 @@ venv/
 
 # Model weights (download at runtime)
 *.pt
+*.onnx
 
 # Data / output images
 data/
+local_testing/
 
 # OS
 .DS_Store

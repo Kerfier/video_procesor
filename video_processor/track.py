@@ -50,6 +50,27 @@ def iou(a: Box, b: Box) -> float:
     return inter / (area_a + area_b - inter)
 
 
+def backward_track(
+    detection_frame: np.ndarray,
+    detection_box: Box,
+    preceding_frames_reversed: list[np.ndarray],
+) -> list[Box]:
+    """Track backward from detection_frame through preceding frames.
+
+    preceding_frames_reversed[0] is frame F-1, [1] is F-2, etc.
+    Returns boxes in the same order. Stops when CSRT loses the target.
+    """
+    tracker = create_csrt_tracker(detection_frame, detection_box)
+    results: list[Box] = []
+    for frame in preceding_frames_reversed:
+        success, rect = tracker.update(frame)
+        if not success:
+            break
+        x, y, w, h = rect
+        results.append((int(x), int(y), int(x + w), int(y + h)))
+    return results
+
+
 def match_detections_to_tracks(
     detections: list[Box],
     tracks: list[Track],

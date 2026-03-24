@@ -15,6 +15,7 @@ class TrackManager:
         self._next_id: int = 0
         self._max_coast_cycles = max_coast_cycles
         self._iou_threshold = iou_threshold
+        self._new_track_events: list[tuple[Box, BoxCategory]] = []
 
     def _new_track(
         self, frame: np.ndarray, box: Box, category: BoxCategory
@@ -27,7 +28,13 @@ class TrackManager:
             max_coast_cycles=self._max_coast_cycles,
         )
         self._next_id += 1
+        self._new_track_events.append((box, category))
         return track
+
+    def pop_new_tracks(self) -> list[tuple[Box, BoxCategory]]:
+        events = self._new_track_events
+        self._new_track_events = []
+        return events
 
     def update_detection(
         self,

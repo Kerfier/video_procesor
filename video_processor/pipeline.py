@@ -1,13 +1,16 @@
 import sys
+from collections import deque
 from pathlib import Path
 
 import cv2
 from tqdm import tqdm
+from open_image_models import LicensePlateDetector
 from ultralytics import YOLO
 
 from .audio import mux_audio
-from .detection import detect_boxes
+from .detection import detect_boxes, Box
 from .frame_ops import apply_blur, draw_debug_frame
+from .track import backward_track
 from .track_manager import TrackManager
 
 
@@ -17,8 +20,9 @@ def process_video(
     blur_strength: int,
     conf: float,
     face_model: YOLO,
-    plate_model: YOLO,
+    plate_model: LicensePlateDetector,
     debug: bool = False,
+    lookback_frames: int = 60,
 ) -> Path:
     """Process a single video. Returns path to the final output file."""
     cap = cv2.VideoCapture(str(input_path))
@@ -48,6 +52,34 @@ def process_video(
         csv_file.write("frame,mode,track_id,category,x1,y1,x2,y2\n")
 
     track_mgr = TrackManager()
+
+    # Rolling buffers for delayed write
+    frame_buffer: deque[any] = deque()
+    boxes_buffer: deque[list[Box]] = deque()
+    debug_buffer: deque[list[tuple[Box, int, str, str]]] = deque()
+    index_buffer: deque[int] = deque()
+    detect_flag_buffer: deque[bool] = deque()
+
+    def flush_oldest() -> None:
+        frame = frame_buffer.popleft()
+        boxes = boxes_buffer.popleft()
+        idx = index_buffer.popleft()
+        is_det = detect_flag_buffer.popleft()
+        dbg = debug_buffer.popleft()
+
+        writer.write(apply_blur(frame, boxes, blur_strength))
+
+        if debug_writer is not None:
+            debug_boxes = [d[0] for d in dbg]
+            mode = "DETECT" if is_det else "TRACK"
+            debug_writer.write(draw_debug_frame(frame, debug_boxes, idx, mode))
+            if csv_file is not None:
+                for box, track_id, category, box_mode in dbg:
+                    x1, y1, x2, y2 = box
+                    csv_file.write(
+                        f"{idx},{box_mode},{track_id},{category},{x1},{y1},{x2},{y2}\n"
+                    )
+
     frame_idx = 0
 
     with tqdm(total=total_frames, unit="frame", desc=input_path.name) as pbar:
@@ -67,25 +99,43 @@ def process_video(
                 track_mgr.update_tracking(frame)
 
             boxes = track_mgr.get_boxes()
-            writer.write(apply_blur(frame, boxes, blur_strength))
+            debug_info = track_mgr.get_debug_info(is_detect) if debug else []
 
-            if debug_writer is not None:
-                debug_info = track_mgr.get_debug_info(is_detect)
-                debug_boxes = [d[0] for d in debug_info]
-                mode = "DETECT" if is_detect else "TRACK"
-                debug_writer.write(draw_debug_frame(frame, debug_boxes, frame_idx, mode))
-                if csv_file is not None:
-                    for box, track_id, category, box_mode in debug_info:
-                        x1, y1, x2, y2 = box
-                        csv_file.write(
-                            f"{frame_idx},{box_mode},{track_id},{category},{x1},{y1},{x2},{y2}\n"
-                        )
+            # Flush oldest if buffer is full
+            if len(frame_buffer) == lookback_frames:
+                flush_oldest()
+
+            # Buffer current frame
+            frame_buffer.append(frame.copy())
+            boxes_buffer.append(list(boxes))
+            index_buffer.append(frame_idx)
+            detect_flag_buffer.append(is_detect)
+            debug_buffer.append(debug_info)
+
+            # Backward-track for any newly created tracks
+            new_tracks = track_mgr.pop_new_tracks()
+            if new_tracks and len(frame_buffer) > 1:
+                # Preceding frames in reverse order (exclude current frame at [-1])
+                preceding_reversed = [frame_buffer[-(i + 2)] for i in range(len(frame_buffer) - 1)]
+                for det_box, category in new_tracks:
+                    lookback_boxes = backward_track(frame, det_box, preceding_reversed)
+                    for i, lb_box in enumerate(lookback_boxes):
+                        buf_idx = len(frame_buffer) - 2 - i
+                        boxes_buffer[buf_idx].append(lb_box)
+                        if debug:
+                            debug_buffer[buf_idx].append(
+                                (lb_box, -1, category.value, "LOOKBACK")
+                            )
 
             frame_idx += 1
             pbar.update(1)
 
         pbar.n = pbar.total
         pbar.refresh()
+
+    # Drain remaining buffer
+    while frame_buffer:
+        flush_oldest()
 
     cap.release()
     writer.release()
