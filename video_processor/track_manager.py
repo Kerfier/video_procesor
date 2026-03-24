@@ -1,6 +1,6 @@
 import numpy as np
 
-from .detection import Box
+from .detection import Box, Detection
 from .track import (
     BoxCategory,
     Track,
@@ -8,27 +8,40 @@ from .track import (
     match_detections_to_tracks,
 )
 
+_SNAP_ALPHA = 0.7  # Weight toward YOLO position vs CSRT on detection frames
+
+
+def _blend_box(csrt_box: Box, yolo_box: Box, alpha: float = _SNAP_ALPHA) -> Box:
+    return tuple(int(alpha * y + (1 - alpha) * c) for y, c in zip(yolo_box, csrt_box))
+
 
 class TrackManager:
-    def __init__(self, max_coast_cycles: int = 4, iou_threshold: float = 0.3):
+    def __init__(
+        self,
+        max_coast_cycles: int = 4,
+        iou_threshold: float = 0.3,
+        max_csrt_fail_frames: int = 2,
+    ):
         self._tracks: list[Track] = []
         self._next_id: int = 0
         self._max_coast_cycles = max_coast_cycles
         self._iou_threshold = iou_threshold
+        self._max_csrt_fail_frames = max_csrt_fail_frames
         self._new_track_events: list[tuple[Box, BoxCategory]] = []
 
     def _new_track(
-        self, frame: np.ndarray, box: Box, category: BoxCategory
+        self, frame: np.ndarray, detection: Detection, category: BoxCategory
     ) -> Track:
         track = Track(
             track_id=self._next_id,
             category=category,
-            box=box,
-            tracker=create_csrt_tracker(frame, box),
+            box=detection.box,
+            tracker=create_csrt_tracker(frame, detection.box),
             max_coast_cycles=self._max_coast_cycles,
+            max_csrt_fail_frames=self._max_csrt_fail_frames,
         )
         self._next_id += 1
-        self._new_track_events.append((box, category))
+        self._new_track_events.append((detection.box, category))
         return track
 
     def pop_new_tracks(self) -> list[tuple[Box, BoxCategory]]:
@@ -39,29 +52,30 @@ class TrackManager:
     def update_detection(
         self,
         frame: np.ndarray,
-        face_boxes: list[Box],
-        plate_boxes: list[Box],
+        face_detections: list[Detection],
+        plate_detections: list[Detection],
     ) -> None:
         new_tracks: list[Track] = []
 
-        for category, det_boxes in [
-            (BoxCategory.FACE, face_boxes),
-            (BoxCategory.PLATE, plate_boxes),
+        for category, detections in [
+            (BoxCategory.FACE, face_detections),
+            (BoxCategory.PLATE, plate_detections),
         ]:
             cat_tracks = [t for t in self._tracks if t.category == category]
             matched, unmatched_dets, unmatched_trks = match_detections_to_tracks(
-                det_boxes, cat_tracks, self._iou_threshold
+                detections, cat_tracks, self._iou_threshold
             )
 
             for di, ti in matched:
                 track = cat_tracks[ti]
-                track.box = det_boxes[di]
+                track.box = _blend_box(track.box, detections[di].box)
                 track.frames_since_detect = 0
+                track.frames_since_csrt_fail = 0
                 track.tracker = create_csrt_tracker(frame, track.box)
                 new_tracks.append(track)
 
             for di in unmatched_dets:
-                new_tracks.append(self._new_track(frame, det_boxes[di], category))
+                new_tracks.append(self._new_track(frame, detections[di], category))
 
             for ti in unmatched_trks:
                 track = cat_tracks[ti]
@@ -76,9 +90,14 @@ class TrackManager:
         for track in self._tracks:
             success, rect = track.tracker.update(frame)
             if success:
+                track.frames_since_csrt_fail = 0
                 x, y, w, h = rect
                 track.box = (int(x), int(y), int(x + w), int(y + h))
                 alive.append(track)
+            else:
+                track.frames_since_csrt_fail += 1
+                if track.frames_since_csrt_fail <= track.max_csrt_fail_frames:
+                    alive.append(track)  # keep last known box position
         self._tracks = alive
 
     def get_boxes(self) -> list[Box]:

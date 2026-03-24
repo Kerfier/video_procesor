@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from typing import NamedTuple
 
 import numpy as np
 from open_image_models import LicensePlateDetector
@@ -7,8 +8,13 @@ from ultralytics import YOLO
 Box = tuple[int, int, int, int]
 
 
-def _extract_boxes(result, frame_w: int, frame_h: int) -> list[Box]:
-    boxes = []
+class Detection(NamedTuple):
+    box: Box
+    conf: float
+
+
+def _extract_boxes(result, frame_w: int, frame_h: int) -> list[Detection]:
+    detections = []
     for box in result.boxes:
         x1, y1, x2, y2 = map(int, box.xyxy[0])
         x1 = max(0, min(x1, frame_w - 1))
@@ -16,15 +22,15 @@ def _extract_boxes(result, frame_w: int, frame_h: int) -> list[Box]:
         x2 = max(0, min(x2, frame_w))
         y2 = max(0, min(y2, frame_h))
         if x2 > x1 and y2 > y1:
-            boxes.append((x1, y1, x2, y2))
-    return boxes
+            detections.append(Detection(box=(x1, y1, x2, y2), conf=float(box.conf[0])))
+    return detections
 
 
 def _extract_plate_boxes(
-    detections, conf: float, frame_w: int, frame_h: int,
-) -> list[Box]:
-    boxes = []
-    for det in detections:
+    detections_raw, conf: float, frame_w: int, frame_h: int,
+) -> list[Detection]:
+    detections = []
+    for det in detections_raw:
         if det.confidence < conf:
             continue
         bb = det.bounding_box
@@ -33,8 +39,8 @@ def _extract_plate_boxes(
         x2 = max(0, min(int(bb.x2), frame_w))
         y2 = max(0, min(int(bb.y2), frame_h))
         if x2 > x1 and y2 > y1:
-            boxes.append((x1, y1, x2, y2))
-    return boxes
+            detections.append(Detection(box=(x1, y1, x2, y2), conf=det.confidence))
+    return detections
 
 
 def detect_boxes(
@@ -44,8 +50,8 @@ def detect_boxes(
     conf: float,
     frame_w: int,
     frame_h: int,
-) -> tuple[list[Box], list[Box]]:
-    """Run parallel YOLO inference. Returns (face_boxes, plate_boxes)."""
+) -> tuple[list[Detection], list[Detection]]:
+    """Run parallel YOLO inference. Returns (face_detections, plate_detections)."""
     with ThreadPoolExecutor(max_workers=2) as ex:
         f_face = ex.submit(lambda: face_model(frame, verbose=False, conf=conf)[0])
         f_plate = ex.submit(lambda: plate_model.predict(frame))

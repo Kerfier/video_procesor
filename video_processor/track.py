@@ -3,8 +3,9 @@ from enum import Enum
 
 import cv2
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
-from .detection import Box
+from .detection import Box, Detection
 
 
 class BoxCategory(str, Enum):
@@ -19,7 +20,9 @@ class Track:
     box: Box
     tracker: cv2.legacy.TrackerCSRT
     frames_since_detect: int = 0
+    frames_since_csrt_fail: int = 0
     max_coast_cycles: int = 2
+    max_csrt_fail_frames: int = 2
 
     @property
     def is_coasting(self) -> bool:
@@ -72,32 +75,39 @@ def backward_track(
 
 
 def match_detections_to_tracks(
-    detections: list[Box],
+    detections: list[Detection],
     tracks: list[Track],
     iou_threshold: float = 0.3,
 ) -> tuple[list[tuple[int, int]], list[int], list[int]]:
-    """Greedy IoU matching. Returns (matched_pairs, unmatched_det_indices, unmatched_track_indices)."""
+    """Hungarian IoU matching weighted by detection confidence.
+
+    Score = iou * conf; threshold enforced on raw IoU to preserve spatial constraint.
+    Returns (matched_pairs, unmatched_det_indices, unmatched_track_indices).
+    """
     if not detections or not tracks:
         return [], list(range(len(detections))), list(range(len(tracks)))
 
-    pairs = []
+    n_det = len(detections)
+    n_trk = len(tracks)
+
+    # Build cost matrix: cost = 1 - (iou * conf)
+    cost = np.ones((n_det, n_trk), dtype=np.float64)
     for di, det in enumerate(detections):
         for ti, trk in enumerate(tracks):
-            score = iou(det, trk.box)
-            if score >= iou_threshold:
-                pairs.append((score, di, ti))
+            cost[di, ti] = 1.0 - iou(det.box, trk.box) * det.conf
 
-    pairs.sort(reverse=True)
+    row_ind, col_ind = linear_sum_assignment(cost)
 
     matched = []
     used_dets: set[int] = set()
     used_trks: set[int] = set()
-    for score, di, ti in pairs:
-        if di not in used_dets and ti not in used_trks:
+    for di, ti in zip(row_ind, col_ind):
+        # Enforce raw-IoU spatial threshold so low-conf detections can't steal tracks
+        if iou(detections[di].box, tracks[ti].box) >= iou_threshold:
             matched.append((di, ti))
             used_dets.add(di)
             used_trks.add(ti)
 
-    unmatched_dets = [i for i in range(len(detections)) if i not in used_dets]
-    unmatched_trks = [i for i in range(len(tracks)) if i not in used_trks]
+    unmatched_dets = [i for i in range(n_det) if i not in used_dets]
+    unmatched_trks = [i for i in range(n_trk) if i not in used_trks]
     return matched, unmatched_dets, unmatched_trks

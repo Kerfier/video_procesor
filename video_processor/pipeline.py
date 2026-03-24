@@ -91,10 +91,10 @@ def process_video(
             is_detect = (frame_idx % detection_interval == 0)
 
             if is_detect:
-                face_boxes, plate_boxes = detect_boxes(
+                face_detections, plate_detections = detect_boxes(
                     face_model, plate_model, frame, conf, width, height
                 )
-                track_mgr.update_detection(frame, face_boxes, plate_boxes)
+                track_mgr.update_detection(frame, face_detections, plate_detections)
             else:
                 track_mgr.update_tracking(frame)
 
