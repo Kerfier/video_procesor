@@ -1,6 +1,6 @@
 # video_processor
 
-Blur faces and license plates in video files using YOLOv11 detection, CSRT tracking, and linear interpolation.
+Blur faces and license plates in video files using YOLOv12 detection and KCF tracking.
 
 ## Setup
 
@@ -8,56 +8,59 @@ Blur faces and license plates in video files using YOLOv11 detection, CSRT track
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
-# Install PyTorch first (see https://pytorch.org/get-started/locally/ for your platform)
-pip install torch torchvision
+# Mac / Linux
+bash install.sh
 
-# Install remaining dependencies
-pip install -r requirements.txt
+# Windows
+install.bat
 ```
 
-## Models
+Both detection models and FFmpeg are downloaded automatically on first run.
 
-| File | Source |
-|------|--------|
-| `yolov11n-face.pt` | [akanametov/yolo-face](https://huggingface.co/akanametov/yolo-face) — download manually and place in project root |
-| License plate model | [morsetechlab/yolov11-license-plate-detection](https://huggingface.co/morsetechlab/yolov11-license-plate-detection) — downloaded automatically via `huggingface_hub` |
+> The install script runs `pip install .` and then fixes an OpenCV package conflict caused by `ultralytics` pulling in `opencv-python` over `opencv-contrib-python` (which is required for the KCF tracker).
 
 ## Usage
 
 ```bash
-python video_processor.py <input.mp4> [options]
+video-processor <input.mp4> [options]
 ```
 
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `input` | — | Path to input `.mp4` file |
-| `--detection-interval N` | `7` | Run YOLO detection every N frames |
+| `--output PATH` | same dir, `blurred_` prefix | Output file path or directory |
+| `--detection-interval N` | `5` | Run YOLO detection every N frames |
 | `--blur-strength N` | `51` | Gaussian blur kernel size (must be odd) |
-| `--conf F` | `0.2` | Detection confidence threshold |
+| `--conf F` | `0.25` | Detection confidence threshold |
+| `--lookback-frames N` | `60` | Frame buffer size for backward tracking |
 | `--debug` | off | Write annotated debug video and CSV |
-
-Output is saved as `blurred_<input>.mp4` in the same directory. Audio is preserved if `ffmpeg` is available.
 
 ### Examples
 
 ```bash
-# Basic usage
-python video_processor.py my_video.mp4
+# Basic usage — output saved as blurred_my_video.mp4 next to the input
+video-processor my_video.mp4
+
+# Write output to a specific directory
+video-processor my_video.mp4 --output /tmp/
+
+# Write output to a specific file
+video-processor my_video.mp4 --output /tmp/result.mp4
 
 # Detect more often, stronger blur
-python video_processor.py my_video.mp4 --detection-interval 3 --blur-strength 75
+video-processor my_video.mp4 --detection-interval 3 --blur-strength 75
 
 # Enable debug output
-python video_processor.py my_video.mp4 --debug
+video-processor my_video.mp4 --debug
 ```
 
 ## How it works
 
-Detection runs every `--detection-interval` frames (default: every 7th frame). Between detections, each detected object is tracked using a CSRT tracker.
+Detection runs every `--detection-interval` frames using YOLOv12 (faces) and `open_image_models` (license plates) in parallel. Between detection frames, each tracked object is followed by a KCF tracker.
 
-When both the start and end of a segment have the **same number of detected boxes**, positions are **linearly interpolated** frame-by-frame — each box smoothly slides from its start coordinates to its end coordinates. If the box counts differ (an object appeared or disappeared), the tracker output is used instead.
+When a new object is detected, a KCF tracker rewinds through a buffer of the last `--lookback-frames` frames to retroactively fill in blur boxes before the object was first detected.
 
-The final trailing segment (no future detection available) always uses the last known detection for the first frame and tracker results for the rest.
+Audio is preserved automatically using the bundled FFmpeg.
 
 ## Debug mode
 
@@ -68,20 +71,15 @@ The final trailing segment (no future detection available) always uses the last 
 | Color | Mode | Meaning |
 |-------|------|---------|
 | Green | `DETECT` | Frame where YOLO ran |
-| Cyan | `INTERPOLATE` | Frame with linearly interpolated box |
-| Blue-orange | `TRACK` | Frame using CSRT tracker output |
-
-Each box is labeled with its coordinates. Frame index and mode are shown in the top-left corner.
+| Blue-orange | `TRACK` | Frame using KCF tracker output |
+| Cyan | `COAST` | Track kept alive without a fresh detection |
+| Gray | `LOOKBACK` | Box filled in retroactively via backward tracking |
 
 **`debug_<input>.csv`** — per-frame box data:
 
 ```
-frame,mode,box_idx,x1,y1,x2,y2
-0,DETECT,0,120,45,210,180
-1,INTERPOLATE,0,121,46,211,181
+frame,mode,track_id,category,x1,y1,x2,y2
+0,DETECT,0,face,120,45,210,180
+1,TRACK,0,face,121,46,211,181
 ...
 ```
-
-## Known limitations
-
-**Interpolation box-order sensitivity** — interpolation pairs start/end boxes by position in the list using `zip`. If the model returns the same number of boxes between two detection frames but in a different order (e.g. two faces swapped), each box will interpolate toward the wrong target. The blur region will visibly slide across the frame between the two objects rather than staying on them. This does not affect frames that fall back to tracker mode.

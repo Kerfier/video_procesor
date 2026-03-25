@@ -16,6 +16,7 @@ from .track_manager import TrackManager
 
 def process_video(
     input_path: Path,
+    output_path: Path,
     detection_interval: int,
     blur_strength: int,
     conf: float,
@@ -35,8 +36,7 @@ def process_video(
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    output_path = input_path.parent / f"blurred_{input_path.name}"
-    temp_path = input_path.parent / f"_tmp_{input_path.stem}.mp4"
+    temp_path = output_path.parent / f"_tmp_{output_path.stem}.mp4"
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(str(temp_path), fourcc, fps, (width, height))
@@ -45,9 +45,9 @@ def process_video(
     debug_path = None
     csv_file = None
     if debug:
-        debug_path = input_path.parent / f"debug_{input_path.name}"
+        debug_path = output_path.parent / f"debug_{input_path.name}"
         debug_writer = cv2.VideoWriter(str(debug_path), fourcc, fps, (width, height))
-        csv_path = input_path.parent / f"debug_{input_path.stem}.csv"
+        csv_path = output_path.parent / f"debug_{input_path.stem}.csv"
         csv_file = open(csv_path, "w")
         csv_file.write("frame,mode,track_id,category,x1,y1,x2,y2\n")
 

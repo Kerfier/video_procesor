@@ -28,6 +28,10 @@ def parse_args() -> argparse.Namespace:
         help="Number of frames to buffer for backward tracking when a new object is detected (default: 60).",
     )
     parser.add_argument(
+        "--output", type=str, default=None,
+        help="Output file path or directory. Defaults to input directory with 'blurred_' prefix.",
+    )
+    parser.add_argument(
         "--debug", action="store_true",
         help="Write an annotated debug video and CSV showing box positions and modes.",
     )
@@ -42,11 +46,21 @@ def main() -> None:
         print(f"Error: file not found: {input_path}", file=sys.stderr)
         sys.exit(1)
 
+    if args.output is None:
+        output_path = input_path.parent / f"blurred_{input_path.name}"
+    else:
+        out = Path(args.output)
+        if out.is_dir():
+            output_path = out / f"blurred_{input_path.name}"
+        else:
+            output_path = out
+
     print("Loading dependencies...")
     face_model, plate_model = load_models()
 
     output_path = process_video(
         input_path=input_path,
+        output_path=output_path,
         detection_interval=args.detection_interval,
         blur_strength=args.blur_strength,
         conf=args.conf,

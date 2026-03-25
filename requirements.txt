@@ -3,5 +3,5 @@ opencv-contrib-python
 open-image-models[onnx]
 Pillow
 tqdm
-gradio-client
 scipy
+imageio-ffmpeg

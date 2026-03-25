@@ -1,29 +1,28 @@
-import shutil
 import subprocess
 import warnings
 from pathlib import Path
 
+import imageio_ffmpeg
+
+
+def _ffmpeg_exe() -> str:
+    return imageio_ffmpeg.get_ffmpeg_exe()
+
 
 def has_audio_stream(video_path: Path) -> bool:
-    if not shutil.which("ffprobe"):
-        return False
     result = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "a",
-         "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(video_path)],
+        [_ffmpeg_exe(), "-i", str(video_path)],
         capture_output=True, text=True,
     )
-    return "audio" in result.stdout
+    return "Audio:" in result.stderr
 
 
 def mux_audio(input_video: Path, silent_output: Path, final_output: Path) -> bool:
     """Copy audio from input_video into silent_output → final_output. Returns True on success."""
-    if not shutil.which("ffmpeg"):
-        warnings.warn("ffmpeg not found — output will have no audio.")
-        return False
     if not has_audio_stream(input_video):
         return False
     cmd = [
-        "ffmpeg", "-y",
+        _ffmpeg_exe(), "-y",
         "-i", str(silent_output),
         "-i", str(input_video),
         "-c:v", "copy",
