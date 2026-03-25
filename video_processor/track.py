@@ -18,11 +18,11 @@ class Track:
     track_id: int
     category: BoxCategory
     box: Box
-    tracker: cv2.legacy.TrackerCSRT
+    tracker: cv2.legacy.TrackerKCF
     frames_since_detect: int = 0
-    frames_since_csrt_fail: int = 0
+    frames_since_fail: int = 0
     max_coast_cycles: int = 2
-    max_csrt_fail_frames: int = 2
+    max_fail_frames: int = 2
 
     @property
     def is_coasting(self) -> bool:
@@ -33,9 +33,9 @@ class Track:
         return self.frames_since_detect > self.max_coast_cycles
 
 
-def create_csrt_tracker(frame: np.ndarray, box: Box) -> cv2.legacy.TrackerCSRT:
+def create_kcf_tracker(frame: np.ndarray, box: Box) -> cv2.legacy.TrackerKCF:
     x1, y1, x2, y2 = box
-    tracker = cv2.legacy.TrackerCSRT_create()
+    tracker = cv2.legacy.TrackerKCF_create()
     tracker.init(frame, (x1, y1, x2 - x1, y2 - y1))
     return tracker
 
@@ -61,9 +61,9 @@ def backward_track(
     """Track backward from detection_frame through preceding frames.
 
     preceding_frames_reversed[0] is frame F-1, [1] is F-2, etc.
-    Returns boxes in the same order. Stops when CSRT loses the target.
+    Returns boxes in the same order. Stops when the tracker loses the target.
     """
-    tracker = create_csrt_tracker(detection_frame, detection_box)
+    tracker = create_kcf_tracker(detection_frame, detection_box)
     results: list[Box] = []
     for frame in preceding_frames_reversed:
         success, rect = tracker.update(frame)

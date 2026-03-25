@@ -4,15 +4,15 @@ from .detection import Box, Detection
 from .track import (
     BoxCategory,
     Track,
-    create_csrt_tracker,
+    create_kcf_tracker,
     match_detections_to_tracks,
 )
 
-_SNAP_ALPHA = 0.7  # Weight toward YOLO position vs CSRT on detection frames
+_SNAP_ALPHA = 0.7  # Weight toward YOLO position vs KCF on detection frames
 
 
-def _blend_box(csrt_box: Box, yolo_box: Box, alpha: float = _SNAP_ALPHA) -> Box:
-    return tuple(int(alpha * y + (1 - alpha) * c) for y, c in zip(yolo_box, csrt_box))
+def _blend_box(kcf_box: Box, yolo_box: Box, alpha: float = _SNAP_ALPHA) -> Box:
+    return tuple(int(alpha * y + (1 - alpha) * c) for y, c in zip(yolo_box, kcf_box))
 
 
 class TrackManager:
@@ -20,13 +20,13 @@ class TrackManager:
         self,
         max_coast_cycles: int = 4,
         iou_threshold: float = 0.3,
-        max_csrt_fail_frames: int = 2,
+        max_fail_frames: int = 2,
     ):
         self._tracks: list[Track] = []
         self._next_id: int = 0
         self._max_coast_cycles = max_coast_cycles
         self._iou_threshold = iou_threshold
-        self._max_csrt_fail_frames = max_csrt_fail_frames
+        self._max_fail_frames = max_fail_frames
         self._new_track_events: list[tuple[Box, BoxCategory]] = []
 
     def _new_track(
@@ -36,9 +36,9 @@ class TrackManager:
             track_id=self._next_id,
             category=category,
             box=detection.box,
-            tracker=create_csrt_tracker(frame, detection.box),
+            tracker=create_kcf_tracker(frame, detection.box),
             max_coast_cycles=self._max_coast_cycles,
-            max_csrt_fail_frames=self._max_csrt_fail_frames,
+            max_fail_frames=self._max_fail_frames,
         )
         self._next_id += 1
         self._new_track_events.append((detection.box, category))
@@ -70,8 +70,8 @@ class TrackManager:
                 track = cat_tracks[ti]
                 track.box = _blend_box(track.box, detections[di].box)
                 track.frames_since_detect = 0
-                track.frames_since_csrt_fail = 0
-                track.tracker = create_csrt_tracker(frame, track.box)
+                track.frames_since_fail = 0
+                track.tracker = create_kcf_tracker(frame, track.box)
                 new_tracks.append(track)
 
             for di in unmatched_dets:
@@ -90,13 +90,13 @@ class TrackManager:
         for track in self._tracks:
             success, rect = track.tracker.update(frame)
             if success:
-                track.frames_since_csrt_fail = 0
+                track.frames_since_fail = 0
                 x, y, w, h = rect
                 track.box = (int(x), int(y), int(x + w), int(y + h))
                 alive.append(track)
             else:
-                track.frames_since_csrt_fail += 1
-                if track.frames_since_csrt_fail <= track.max_csrt_fail_frames:
+                track.frames_since_fail += 1
+                if track.frames_since_fail <= track.max_fail_frames:
                     alive.append(track)  # keep last known box position
         self._tracks = alive
 
