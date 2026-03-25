@@ -1,0 +1,56 @@
+name: Test Installation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-windows:
+    name: Windows install smoke test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip downloads
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: pip-win-py3.11-${{ hashFiles('pyproject.toml') }}
+          restore-keys: pip-win-py3.11-
+
+      - name: Run install.bat
+        shell: cmd
+        run: install.bat
+
+      - name: Verify CLI
+        shell: cmd
+        run: video-processor --help
+
+  test-linux:
+    name: Linux install smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-linux-py3.11-${{ hashFiles('pyproject.toml') }}
+          restore-keys: pip-linux-py3.11-
+
+      - name: Run install.sh
+        run: bash install.sh
+
+      - name: Verify CLI
+        run: .venv/bin/video-processor --help
