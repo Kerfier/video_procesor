@@ -5,14 +5,13 @@ Blur faces and license plates in video files using YOLOv12 detection and KCF tra
 ## Setup
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
 # Mac / Linux
 bash install.sh
+source .venv/bin/activate
 
 # Windows
 install.bat
+.venv\Scripts\activate
 ```
 
 Both detection models and FFmpeg are downloaded automatically on first run.
