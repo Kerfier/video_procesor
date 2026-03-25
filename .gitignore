@@ -17,5 +17,8 @@ venv/
 data/
 local_testing/
 
+# Claude Code local settings
+.claude/
+
 # OS
 .DS_Store

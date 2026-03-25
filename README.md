@@ -2,6 +2,12 @@
 
 Blur faces and license plates in video files using YOLO detection and KCF tracking.
 
+## Prerequisites
+
+- **Python 3.10+**
+- **Git** (to clone the repository)
+- No GPU required — all models run on CPU
+
 ## Setup
 
 ```bash
