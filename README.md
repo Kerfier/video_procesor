@@ -1,6 +1,6 @@
-# video_processor
+# Video Processor
 
-Blur faces and license plates in video files using YOLOv12 detection and KCF tracking.
+Blur faces and license plates in video files using YOLO detection and KCF tracking.
 
 ## Setup
 
@@ -14,9 +14,18 @@ install.bat
 .venv\Scripts\activate
 ```
 
-Both detection models and FFmpeg are downloaded automatically on first run.
+Both detection models and FFmpeg are downloaded automatically on first run and cached in `~/.cache/video_processor/` (macOS/Linux) or `%LOCALAPPDATA%\video_processor\` (Windows).
 
-> The install script runs `pip install .` and then fixes an OpenCV package conflict caused by `ultralytics` pulling in `opencv-python` over `opencv-contrib-python` (which is required for the KCF tracker).
+> The install script fixes an OpenCV conflict: `ultralytics` pulls in `opencv-python`, but the KCF tracker requires `opencv-contrib-python`. The script installs everything then swaps the OpenCV package.
+
+## Models
+
+| Target | Model | Source |
+|--------|-------|--------|
+| Faces | [YOLOv12n-face](https://github.com/YapaLab/yolo-face) (ONNX, ~6 MB) | Auto-downloaded from GitHub on first run |
+| License plates | `yolo-v9-t-384-license-plate-end2end` | Bundled via [`open_image_models`](https://github.com/ankandrew/open-image-models) |
+
+Both models run in parallel on every detection frame via `ThreadPoolExecutor`.
 
 ## Usage
 
@@ -55,11 +64,15 @@ video-processor my_video.mp4 --debug
 
 ## How it works
 
-Detection runs every `--detection-interval` frames using YOLOv12 (faces) and `open_image_models` (license plates) in parallel. Between detection frames, each tracked object is followed by a KCF tracker.
+**Detection** runs every `--detection-interval` frames. YOLOv12n-face and the license plate model run in parallel, and their results are matched to existing tracks via Hungarian IoU matching. New tracks are created for unmatched detections.
 
-When a new object is detected, a KCF tracker rewinds through a buffer of the last `--lookback-frames` frames to retroactively fill in blur boxes before the object was first detected.
+**Tracking** runs on every other frame using OpenCV's KCF tracker — fast and lightweight, no GPU required.
 
-Audio is preserved automatically using the bundled FFmpeg.
+**Backward tracking**: when a new object is first detected, a KCF tracker rewinds through the last `--lookback-frames` frames to retroactively blur the object before it was first detected. Frames are held in a buffer until it's full so backward-tracked boxes can be applied before writing.
+
+**Blur**: each box is expanded by 20% and Gaussian-blurred through a rounded-rectangle alpha mask (15% corner radius).
+
+**Audio** is preserved automatically using the bundled FFmpeg, which re-muxes the original audio stream into the output without re-encoding.
 
 ## Debug mode
 
