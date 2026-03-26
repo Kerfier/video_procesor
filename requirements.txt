@@ -1,7 +1,0 @@
-ultralytics
-opencv-contrib-python
-open-image-models[onnx]
-Pillow
-tqdm
-scipy
-imageio-ffmpeg

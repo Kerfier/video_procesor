@@ -21,16 +21,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\pip\Cache
-          key: pip-win-py3.11-${{ hashFiles('pyproject.toml') }}
+          key: pip-win-py3.11-${{ hashFiles('processor/pyproject.toml') }}
           restore-keys: pip-win-py3.11-
 
       - name: Run install.bat
         shell: cmd
-        run: install.bat
+        run: cd processor && install.bat
 
       - name: Verify CLI
         shell: cmd
-        run: .venv\Scripts\video-processor --help
+        run: processor\.venv\Scripts\video-processor --help
 
   test-linux:
     name: Linux install smoke test
@@ -46,11 +46,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: pip-linux-py3.11-${{ hashFiles('pyproject.toml') }}
+          key: pip-linux-py3.11-${{ hashFiles('processor/pyproject.toml') }}
           restore-keys: pip-linux-py3.11-
 
       - name: Run install.sh
-        run: bash install.sh
+        run: cd processor && bash install.sh
 
       - name: Verify CLI
-        run: .venv/bin/video-processor --help
+        run: processor/.venv/bin/video-processor --help

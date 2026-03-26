@@ -20,6 +20,13 @@ dependencies = [
 [project.scripts]
 video-processor = "video_processor.cli:main"
 
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["video_processor*"]

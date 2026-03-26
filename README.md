@@ -1,6 +1,6 @@
 # Video Processor
 
-Blur faces and license plates in video files using YOLO detection and KCF tracking.
+Blur faces and license plates in video files using YOLO detection and KCF tracking. Supports both batch CLI processing and a streaming HTTP API for segment-by-segment HLS processing.
 
 ## Prerequisites
 
@@ -12,10 +12,12 @@ Blur faces and license plates in video files using YOLO detection and KCF tracki
 
 ```bash
 # Mac / Linux
+cd processor
 bash install.sh
 source .venv/bin/activate
 
 # Windows
+cd processor
 install.bat
 .venv\Scripts\activate
 ```
@@ -23,6 +25,18 @@ install.bat
 Both detection models and FFmpeg are downloaded automatically on first run and cached in `~/.cache/video_processor/` (macOS/Linux) or `%LOCALAPPDATA%\video_processor\` (Windows).
 
 > The install script fixes an OpenCV conflict: `ultralytics` pulls in `opencv-python`, but the KCF tracker requires `opencv-contrib-python`. The script installs everything then swaps the OpenCV package.
+
+To also run the **streaming HTTP server**, install the optional server dependencies:
+
+```bash
+# Mac / Linux
+cd processor
+.venv/bin/pip install -e ".[server]"
+
+# Windows
+cd processor
+.venv\Scripts\pip install -e ".[server]"
+```
 
 ## Models
 
@@ -79,6 +93,54 @@ video-processor my_video.mp4 --debug
 **Blur**: each box is expanded by 20% and Gaussian-blurred through a rounded-rectangle alpha mask (15% corner radius).
 
 **Audio** is preserved automatically using the bundled FFmpeg, which re-muxes the original audio stream into the output without re-encoding.
+
+## Streaming API
+
+The package also exposes a FastAPI service for HLS segment-based processing. Each session maintains tracker state across segments so blur continuity is preserved at boundaries.
+
+### Start the server
+
+```bash
+cd processor
+uvicorn video_processor.server:app --port 8000
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/sessions` | Create a new streaming session |
+| `POST` | `/sessions/{id}/segment` | Process one `.ts` segment; returns blurred `.ts` |
+| `DELETE` | `/sessions/{id}` | Release session and free tracker memory |
+
+### Create a session
+
+```bash
+curl -X POST http://localhost:8000/sessions \
+  -H "Content-Type: application/json" \
+  -d '{"width": 1280, "height": 720, "fps": 30}'
+# → {"session_id": "<uuid>"}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `width` | required | Frame width in pixels |
+| `height` | required | Frame height in pixels |
+| `fps` | required | Frames per second |
+| `detection_interval` | `5` | Run YOLO every N frames |
+| `blur_strength` | `51` | Gaussian kernel size (must be odd) |
+| `conf` | `0.25` | Detection confidence threshold |
+| `lookback_frames` | `30` | Lookback buffer depth for backward tracking |
+
+### Process a segment
+
+```bash
+curl -X POST http://localhost:8000/sessions/<id>/segment \
+  -F "segment=@input_seg.ts" \
+  --output blurred_seg.ts
+```
+
+Sessions idle for more than 10 minutes are cleaned up automatically.
 
 ## Debug mode
 
