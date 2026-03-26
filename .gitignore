@@ -23,5 +23,18 @@ local_testing/
 .claude/
 CLAUDE.md
 
+# Agents skills
+.agents/
+skills-lock.json
+
+# Node / NestJS server
+**/node_modules/
+**/dist/
+**/.pnpm-store/
+**/coverage/
+**/.env
+**/.env.local
+**/.env.*.local
+
 # OS
 .DS_Store
