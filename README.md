@@ -8,6 +8,8 @@ Blur faces and license plates in video files using YOLO detection and KCF tracki
 - **Git** (to clone the repository)
 - No GPU required — all models run on CPU
 
+> **⚠️ OpenCV Compatibility Note:** The current implementation uses OpenCV's KCF tracker, which was removed in OpenCV 4.10+. The project currently uses `opencv-contrib-python==4.8.1.78`. Future updates should migrate to a supported tracker like `TrackerMIL` to maintain compatibility with newer OpenCV versions.
+
 ## Setup
 
 ```bash

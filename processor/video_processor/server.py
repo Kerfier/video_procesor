@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+import cv2
 import imageio_ffmpeg
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -180,14 +181,13 @@ def _process_segment_sync(state: StreamingState, segment_bytes: bytes) -> bytes:
         tmp_in = Path(tmpdir) / "in.ts"
         tmp_in.write_bytes(segment_bytes)
 
-        frames = _decode_video_frames(ffmpeg, tmp_in, state.width, state.height)
+        frames = _decode_video_frames(tmp_in)
         if frames is None:
             raise _DecodeError("Failed to decode video frames from segment")
 
-        has_audio = _check_has_audio(ffmpeg, tmp_in)
-        tmp_audio = Path(tmpdir) / "audio.aac" if has_audio else None
-        if has_audio:
-            _extract_audio(ffmpeg, tmp_in, tmp_audio)
+        if state.has_audio is None:
+            state.has_audio = _check_has_audio(ffmpeg, tmp_in)
+        audio_source = tmp_in if state.has_audio else None
 
         # Process frames through the stateful pipeline
         output_frames: list[np.ndarray] = []
@@ -205,7 +205,7 @@ def _process_segment_sync(state: StreamingState, segment_bytes: bytes) -> bytes:
             prime_buffer(state, tf)
 
         output_bytes = _encode_frames(
-            ffmpeg, output_frames, state.width, state.height, state.fps, tmp_audio
+            ffmpeg, output_frames, state.width, state.height, state.fps, audio_source
         )
         if output_bytes is None:
             raise _EncodeError("Failed to re-encode processed frames")
@@ -217,26 +217,18 @@ def _process_segment_sync(state: StreamingState, segment_bytes: bytes) -> bytes:
 # FFmpeg helpers
 # ---------------------------------------------------------------------------
 
-def _decode_video_frames(
-    ffmpeg: str, path: Path, width: int, height: int
-) -> list[np.ndarray] | None:
-    cmd = [
-        ffmpeg, "-i", str(path),
-        "-f", "rawvideo", "-pix_fmt", "bgr24",
-        "pipe:1",
-    ]
-    result = subprocess.run(cmd, capture_output=True)
-    if result.returncode != 0:
+def _decode_video_frames(path: Path) -> list[np.ndarray] | None:
+    cap = cv2.VideoCapture(str(path))
+    if not cap.isOpened():
         return None
-    raw = result.stdout
-    frame_size = width * height * 3
-    if len(raw) == 0 or len(raw) % frame_size != 0:
-        return None
-    frames = []
-    for offset in range(0, len(raw), frame_size):
-        arr = np.frombuffer(raw[offset:offset + frame_size], dtype=np.uint8)
-        frames.append(arr.reshape((height, width, 3)).copy())
-    return frames
+    frames: list[np.ndarray] = []
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(frame)
+    cap.release()
+    return frames if frames else None
 
 
 def _check_has_audio(ffmpeg: str, path: Path) -> bool:
@@ -246,12 +238,6 @@ def _check_has_audio(ffmpeg: str, path: Path) -> bool:
     )
     return "Audio:" in result.stderr
 
-
-def _extract_audio(ffmpeg: str, src: Path, dst: Path) -> None:
-    subprocess.run(
-        [ffmpeg, "-y", "-i", str(src), "-vn", "-acodec", "copy", str(dst)],
-        capture_output=True,
-    )
 
 
 def _encode_frames(

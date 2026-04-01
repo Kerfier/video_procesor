@@ -36,6 +36,7 @@ class StreamingState:
 
     # Global frame counter — persists across segment boundaries
     frame_idx: int = 0
+    has_audio: bool | None = None  # cached on first segment, reused thereafter
 
 
 def create_session_state(
