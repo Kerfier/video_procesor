@@ -368,13 +368,14 @@ def _probe_hls_url(url: str) -> tuple[int, int, float]:
     Returns (width, height, fps). Raises ValueError on failure.
     """
     import requests as _requests
-    from .hls_puller import _resolve_media_url, _fetch_text, _parse_segments, _fetch_bytes
+    from .hls_puller import _resolve_media_url, _fetch_text, _fetch_bytes, HLSPlaylist
 
     try:
         with _requests.Session() as http:
             media_url = _resolve_media_url(url, http)
             playlist_text = _fetch_text(media_url, http)
-            segments, _ = _parse_segments(playlist_text, media_url)
+            playlist = HLSPlaylist.parse(playlist_text, media_url)
+            segments = playlist.segments
             if not segments:
                 raise ValueError("Playlist has no segments")
             _, first_url, _ = segments[0]
