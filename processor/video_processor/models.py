@@ -1,5 +1,6 @@
 import os
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -25,13 +26,21 @@ def _ensure_face_model() -> Path:
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
     print(f"Downloading face model to {dest} ...")
-    with urllib.request.urlopen(_FACE_MODEL_URL) as response:
-        total = int(response.headers.get("Content-Length", 0))
-        with tqdm(total=total or None, unit="B", unit_scale=True, desc=_FACE_MODEL_NAME) as bar:
-            with open(dest, "wb") as f:
-                while chunk := response.read(65536):
-                    f.write(chunk)
-                    bar.update(len(chunk))
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    try:
+        with urllib.request.urlopen(_FACE_MODEL_URL) as response:
+            total = int(response.headers.get("Content-Length", 0))
+            with tqdm(total=total or None, unit="B", unit_scale=True, desc=_FACE_MODEL_NAME) as bar:
+                with open(tmp, "wb") as f:
+                    while chunk := response.read(65536):
+                        f.write(chunk)
+                        bar.update(len(chunk))
+    except urllib.error.URLError as exc:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Failed to download face model from {_FACE_MODEL_URL}: {exc}"
+        ) from exc
+    tmp.rename(dest)
     return dest
 
 

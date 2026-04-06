@@ -14,6 +14,8 @@ Two session modes:
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import os
 import subprocess
 import sys
 import tempfile
@@ -43,6 +45,7 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("server")
+from .audio import has_audio_stream
 from .models import load_models
 from .streaming import (
     StreamingState,
@@ -71,10 +74,23 @@ class _Session:
 
 
 _sessions: dict[str, _Session] = {}
+_sessions_lock = threading.Lock()
 _face_model = None
 _plate_model = None
 
 _SESSION_TTL_SECONDS = 600  # 10 minutes
+MAX_SEGMENT_BYTES = 50 * 1024 * 1024  # 50 MB — guard against runaway uploads
+MAX_SESSIONS = int(os.environ.get("MAX_SESSIONS", "50"))
+_SEGMENT_TIMEOUT_SECONDS = float(os.environ.get("SEGMENT_TIMEOUT_SECONDS", "120"))
+
+_cpu_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=int(os.environ.get("PROCESSOR_WORKERS", str(os.cpu_count() or 4))),
+    thread_name_prefix="segment-processor",
+)
+
+# Base directory that output_dir values must reside within (path-traversal guard).
+# Matches the OUTPUT_DIR env var consumed by the NestJS server.
+_OUTPUT_BASE = Path(os.environ.get("OUTPUT_DIR", "/tmp/streams")).resolve()
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +109,23 @@ async def _lifespan(app: FastAPI):
     yield
     cleanup_task.cancel()
 
+    # Signal all active pull sessions to stop
+    with _sessions_lock:
+        sessions_snapshot = list(_sessions.values())
+
+    for sess in sessions_snapshot:
+        if sess.stop_event is not None:
+            sess.stop_event.set()
+
+    # Wait up to 10 s for pull threads to exit cleanly
+    deadline = time.monotonic() + 10.0
+    for sess in sessions_snapshot:
+        if sess.thread is not None and sess.thread.is_alive():
+            remaining = max(0.0, deadline - time.monotonic())
+            sess.thread.join(timeout=remaining)
+
+    _cpu_executor.shutdown(wait=False)
+
 
 app = FastAPI(title="video-processor streaming service", lifespan=_lifespan)
 
@@ -107,12 +140,13 @@ async def _idle_cleanup_loop() -> None:
         await asyncio.sleep(60)
         now = time.monotonic()
         # Only expire push sessions; pull sessions self-cleanup when their thread exits
-        expired = [
-            sid for sid, sess in list(_sessions.items())
-            if sess.mode == "push" and now - sess.last_used_at > _SESSION_TTL_SECONDS
-        ]
-        for sid in expired:
-            _sessions.pop(sid, None)
+        with _sessions_lock:
+            expired = [
+                sid for sid, sess in list(_sessions.items())
+                if sess.mode == "push" and now - sess.last_used_at > _SESSION_TTL_SECONDS
+            ]
+            for sid in expired:
+                _sessions.pop(sid, None)
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +171,19 @@ class CreateSessionRequest(BaseModel):
     def _must_be_odd(cls, v: int) -> int:
         if v % 2 == 0:
             raise ValueError("blur_strength must be odd (Gaussian kernel requirement)")
+        return v
+
+    @field_validator("output_dir")
+    @classmethod
+    def _must_be_within_output_base(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        try:
+            Path(v).resolve().relative_to(_OUTPUT_BASE)
+        except ValueError:
+            raise ValueError(
+                f"output_dir must be inside {_OUTPUT_BASE} (set OUTPUT_DIR env var to change the base)"
+            )
         return v
 
     @model_validator(mode="after")
@@ -185,7 +232,10 @@ def create_session(req: CreateSessionRequest) -> CreateSessionResponse:
             stop_event=stop_event,
             thread=None,
         )
-        _sessions[session_id] = session
+        with _sessions_lock:
+            if len(_sessions) >= MAX_SESSIONS:
+                raise HTTPException(status_code=503, detail="Session limit reached; try again later")
+            _sessions[session_id] = session
 
         thread = threading.Thread(
             target=_run_pull_session,
@@ -227,7 +277,10 @@ def create_session(req: CreateSessionRequest) -> CreateSessionResponse:
             stop_event=None,
             thread=None,
         )
-        _sessions[session_id] = session
+        with _sessions_lock:
+            if len(_sessions) >= MAX_SESSIONS:
+                raise HTTPException(status_code=503, detail="Session limit reached; try again later")
+            _sessions[session_id] = session
 
     return CreateSessionResponse(session_id=session_id)
 
@@ -257,13 +310,19 @@ async def process_segment(
         raise HTTPException(status_code=400, detail="Session is in pull mode; segments are fetched by Python directly")
 
     sess.last_used_at = time.monotonic()
-    segment_bytes = await segment.read()
+    segment_bytes = await segment.read(MAX_SEGMENT_BYTES + 1)
+    if len(segment_bytes) > MAX_SEGMENT_BYTES:
+        raise HTTPException(status_code=413, detail="Segment too large (limit 50 MB)")
 
     loop = asyncio.get_event_loop()
     try:
-        output_bytes = await loop.run_in_executor(
-            None, _process_segment_sync, sess.state, segment_bytes
+        output_bytes = await asyncio.wait_for(
+            loop.run_in_executor(_cpu_executor, _process_segment_sync, sess.state, segment_bytes),
+            timeout=_SEGMENT_TIMEOUT_SECONDS,
         )
+    except asyncio.TimeoutError:
+        logger.error(f"Segment processing timed out for session {session_id}")
+        raise HTTPException(status_code=504, detail="Segment processing timed out")
     except _DecodeError as exc:
         logger.error(f"Decode error in segment for session {session_id}: {exc}")
         raise HTTPException(status_code=422, detail=str(exc))
@@ -279,7 +338,8 @@ async def process_segment(
 
 @app.delete("/sessions/{session_id}", status_code=204)
 def delete_session(session_id: str) -> None:
-    sess = _sessions.pop(session_id, None)
+    with _sessions_lock:
+        sess = _sessions.pop(session_id, None)
     if sess and sess.stop_event is not None:
         sess.stop_event.set()   # signal background pull thread to stop
 
@@ -287,6 +347,20 @@ def delete_session(session_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Pull mode background thread
 # ---------------------------------------------------------------------------
+
+def _update_session_status(
+    session_id: str,
+    status: str,
+    error: "str | None" = None,
+) -> None:
+    """Atomically update status (and optionally error) on a session."""
+    with _sessions_lock:
+        sess = _sessions.get(session_id)
+        if sess is not None:
+            sess.status = status
+            if error is not None:
+                sess.error = error
+
 
 def _probe_hls_url(url: str) -> tuple[int, int, float]:
     """Download the first segment of an HLS stream and extract width/height/fps.
@@ -296,15 +370,15 @@ def _probe_hls_url(url: str) -> tuple[int, int, float]:
     import requests as _requests
     from .hls_puller import _resolve_media_url, _fetch_text, _parse_segments, _fetch_bytes
 
-    http = _requests.Session()
     try:
-        media_url = _resolve_media_url(url, http)
-        playlist_text = _fetch_text(media_url, http)
-        segments, _ = _parse_segments(playlist_text, media_url)
-        if not segments:
-            raise ValueError("Playlist has no segments")
-        _, first_url, _ = segments[0]
-        raw = _fetch_bytes(first_url, http)
+        with _requests.Session() as http:
+            media_url = _resolve_media_url(url, http)
+            playlist_text = _fetch_text(media_url, http)
+            segments, _ = _parse_segments(playlist_text, media_url)
+            if not segments:
+                raise ValueError("Playlist has no segments")
+            _, first_url, _ = segments[0]
+            raw = _fetch_bytes(first_url, http)
     except Exception as exc:
         raise ValueError(f"Cannot probe HLS stream: {exc}") from exc
 
@@ -324,6 +398,27 @@ def _probe_hls_url(url: str) -> tuple[int, int, float]:
     return width, height, fps
 
 
+def _build_pull_state(
+    url: str,
+    detection_interval: int,
+    blur_strength: int,
+    conf: float,
+    lookback_frames: int,
+) -> StreamingState:
+    """Probe *url* and create a StreamingState. Raises ValueError on probe failure."""
+    width, height, fps = _probe_hls_url(url)
+    return create_session_state(
+        _face_model, _plate_model,
+        detection_interval=detection_interval,
+        blur_strength=blur_strength,
+        conf=conf,
+        lookback_frames=lookback_frames,
+        width=width,
+        height=height,
+        fps=fps,
+    )
+
+
 def _run_pull_session(
     session_id: str,
     url: str,
@@ -336,40 +431,34 @@ def _run_pull_session(
 ) -> None:
     from .hls_puller import pull_and_process
 
-    sess = _sessions.get(session_id)
-    if sess is None:
-        return
+    with _sessions_lock:
+        if _sessions.get(session_id) is None:
+            return
 
-    # Phase 1: probe stream
+    # Phase 1: probe stream and build state
     try:
-        width, height, fps = _probe_hls_url(url)
+        state = _build_pull_state(url, detection_interval, blur_strength, conf, lookback_frames)
     except Exception as exc:
-        if _sessions.get(session_id):
-            sess.status = "error"
-            sess.error = f"Probe failed: {exc}"
+        _update_session_status(session_id, "error", error=f"Probe failed: {exc}")
         return
 
     if stop_event.is_set():
-        _sessions.pop(session_id, None)
+        with _sessions_lock:
+            _sessions.pop(session_id, None)
         return
 
-    # Phase 2: build StreamingState
-    state = create_session_state(
-        _face_model, _plate_model,
-        detection_interval=detection_interval,
-        blur_strength=blur_strength,
-        conf=conf,
-        lookback_frames=lookback_frames,
-        width=width,
-        height=height,
-        fps=fps,
-    )
-    sess.state = state
-    sess.status = "processing"
+    # Phase 2: attach state and transition to processing
+    with _sessions_lock:
+        sess = _sessions.get(session_id)
+        if sess is None:
+            return
+        sess.state = state
+    _update_session_status(session_id, "processing")
 
     def _on_segment_written(sequence: int) -> None:
-        sess.segment_count += 1
-        sess.last_used_at = time.monotonic()
+        with _sessions_lock:
+            sess.segment_count += 1
+            sess.last_used_at = time.monotonic()
 
     # Phase 3: pull loop
     try:
@@ -381,15 +470,13 @@ def _run_pull_session(
             stop_event=stop_event,
             on_segment_written=_on_segment_written,
         )
-        if _sessions.get(session_id):
-            sess.status = "done"
+        _update_session_status(session_id, "done")
     except Exception as exc:
         logger.exception(f"pull session {session_id} error")
-        if _sessions.get(session_id):
-            sess.status = "error"
-            sess.error = str(exc)
+        _update_session_status(session_id, "error", error=str(exc))
     finally:
-        _sessions.pop(session_id, None)
+        with _sessions_lock:
+            _sessions.pop(session_id, None)
 
 
 # ---------------------------------------------------------------------------
@@ -404,9 +491,62 @@ class _EncodeError(Exception):
     pass
 
 
+def _build_ffmpeg_cmd(
+    ffmpeg_exe: str,
+    fps: float,
+    width: int,
+    height: int,
+    out_path: Path,
+    has_audio: bool,
+    audio_src: "Path | None" = None,
+) -> list[str]:
+    """Build the FFmpeg command for re-encoding processed frames to MPEG-TS."""
+    cmd = [
+        ffmpeg_exe, "-y",
+        "-hide_banner", "-loglevel", "error",
+        "-f", "rawvideo",
+        "-s", f"{width}x{height}",
+        "-r", str(fps),
+        "-pix_fmt", "bgr24",
+        "-i", "pipe:0",
+    ]
+    if has_audio and audio_src is not None:
+        cmd += ["-i", str(audio_src), "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0"]
+    cmd += [
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-f", "mpegts",
+        str(out_path),
+    ]
+    return cmd
+
+
+def _pipe_frames_to_proc(
+    cap: cv2.VideoCapture,
+    state: StreamingState,
+    proc: subprocess.Popen,
+) -> None:
+    """Read frames from cap, push through the state pipeline, write blurred frames to proc.stdin.
+
+    Raises _EncodeError on failure. Does not release cap or kill proc — caller is responsible.
+    """
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            if push_frame(state, frame):
+                out_frame = pop_oldest_blurred(state)
+                proc.stdin.write(out_frame.tobytes())
+
+        for out_frame in flush_state(state):
+            proc.stdin.write(out_frame.tobytes())
+    except Exception as exc:
+        raise _EncodeError(f"Error processing segment frames: {exc}") from exc
+
+
 def _process_segment_sync(state: StreamingState, segment_bytes: bytes) -> bytes:
-    from collections import deque
-    
     logger.debug(f"Starting segment processing, bytes={len(segment_bytes)}")
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
 
@@ -415,35 +555,21 @@ def _process_segment_sync(state: StreamingState, segment_bytes: bytes) -> bytes:
         tmp_in.write_bytes(segment_bytes)
 
         if state.has_audio is None:
-            state.has_audio = _check_has_audio(ffmpeg_exe, tmp_in)
+            state.has_audio = has_audio_stream(tmp_in)
             logger.debug(f"Audio detected dynamically: {state.has_audio}")
-            
-        tmp_out = Path(tmpdir) / "out.ts"
 
-        cmd = [
-            ffmpeg_exe, "-y",
-            "-hide_banner", "-loglevel", "error",
-            "-f", "rawvideo",
-            "-s", f"{state.width}x{state.height}",
-            "-r", str(state.fps),
-            "-pix_fmt", "bgr24",
-            "-i", "pipe:0",
-        ]
-        if state.has_audio:
-            cmd += ["-i", str(tmp_in), "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0"]
-        cmd += [
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "23",
-            "-f", "mpegts",
-            str(tmp_out),
-        ]
+        tmp_out = Path(tmpdir) / "out.ts"
+        cmd = _build_ffmpeg_cmd(
+            ffmpeg_exe, state.fps, state.width, state.height, tmp_out,
+            has_audio=state.has_audio,
+            audio_src=tmp_in if state.has_audio else None,
+        )
 
         proc = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
         )
 
         cap = cv2.VideoCapture(str(tmp_in))
@@ -452,28 +578,14 @@ def _process_segment_sync(state: StreamingState, segment_bytes: bytes) -> bytes:
             raise _DecodeError("Failed to decode video frames from segment")
 
         try:
-            while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
-
-                if push_frame(state, frame):
-                    out_frame = pop_oldest_blurred(state)
-                    proc.stdin.write(out_frame.tobytes())
-
-            # Flush remaining frames for this segment
-            for out_frame in flush_state(state):
-                proc.stdin.write(out_frame.tobytes())
-                
+            _pipe_frames_to_proc(cap, state, proc)
             logger.debug("Successfully piped all frames to ffmpeg.")
-                
-        except Exception as exc:
+        except _EncodeError:
             logger.exception("Error processing segment frames during track/blur loop")
-            cap.release()
             proc.kill()
-            raise _EncodeError(f"Error processing segment frames: {exc}") from exc
-
-        cap.release()
+            raise
+        finally:
+            cap.release()
 
         # communicate() automatically flushes and closes stdin, and waits for EOF
         _, stderr_data = proc.communicate()
@@ -484,14 +596,3 @@ def _process_segment_sync(state: StreamingState, segment_bytes: bytes) -> bytes:
 
         return tmp_out.read_bytes()
 
-
-# ---------------------------------------------------------------------------
-# FFmpeg helpers
-# ---------------------------------------------------------------------------
-
-def _check_has_audio(ffmpeg: str, path: Path) -> bool:
-    result = subprocess.run(
-        [ffmpeg, "-i", str(path)],
-        capture_output=True, text=True,
-    )
-    return "Audio:" in result.stderr

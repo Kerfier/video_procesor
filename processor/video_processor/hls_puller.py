@@ -12,11 +12,16 @@ from __future__ import annotations
 import re
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable
 from urllib.parse import urljoin
 import logging
 
 import requests
+
+if TYPE_CHECKING:
+    from .streaming import StreamingState
 
 logger = logging.getLogger("hls_puller")
 
@@ -78,38 +83,59 @@ def _resolve_media_url(url: str, http: requests.Session) -> str:
     return urljoin(url, best_uri)
 
 
-def _parse_segments(
-    playlist_text: str, playlist_url: str
-) -> tuple[list[tuple[int, str, float]], bool]:
-    """Parse a media playlist.
+# ---------------------------------------------------------------------------
+# HLSPlaylist dataclass
+# ---------------------------------------------------------------------------
 
-    Returns (segments, is_end) where segments is a list of
-    (sequence_number, absolute_url, duration) and is_end indicates
-    #EXT-X-ENDLIST was present.
-    """
-    lines = playlist_text.splitlines()
-    base_seq = 0
-    m = _MEDIA_SEQUENCE_RE.search(playlist_text)
-    if m:
-        base_seq = int(m.group(1))
+@dataclass(frozen=True)
+class HLSPlaylist:
+    segments: list[tuple[int, str, float]]  # (seq, url, duration)
+    is_end: bool
 
-    segments: list[tuple[int, str, float]] = []
-    duration = 2.0
-    seq = base_seq
-    for line in lines:
-        line = line.strip()
-        m = _EXTINF_RE.match(line)
+    @staticmethod
+    def parse(text: str, base_url: str) -> HLSPlaylist:
+        """Parse a media playlist into an HLSPlaylist."""
+        lines = text.splitlines()
+        base_seq = 0
+        m = _MEDIA_SEQUENCE_RE.search(text)
         if m:
-            duration = float(m.group(1))
-            continue
-        if line and not line.startswith("#"):
-            abs_url = urljoin(playlist_url, line)
-            segments.append((seq, abs_url, duration))
-            seq += 1
-            duration = 2.0
+            base_seq = int(m.group(1))
 
-    is_end = _ENDLIST_TAG in playlist_text
-    return segments, is_end
+        segments: list[tuple[int, str, float]] = []
+        duration = 2.0
+        seq = base_seq
+        for line in lines:
+            line = line.strip()
+            mext = _EXTINF_RE.match(line)
+            if mext:
+                duration = float(mext.group(1))
+                continue
+            if line and not line.startswith("#"):
+                segments.append((seq, urljoin(base_url, line), duration))
+                seq += 1
+                duration = 2.0
+
+        return HLSPlaylist(segments=segments, is_end=_ENDLIST_TAG in text)
+
+
+def _fetch_new_segments(
+    playlist: HLSPlaylist,
+    seen_seqs: set[int],
+) -> list[tuple[int, str, float]]:
+    """Return segments from *playlist* whose sequence numbers are not in *seen_seqs*."""
+    return [(seq, url, dur) for seq, url, dur in playlist.segments if seq not in seen_seqs]
+
+
+def _download_segment(
+    seq: int,
+    url: str,
+    http: requests.Session,
+    stop_event: threading.Event,
+) -> bytes | None:
+    """Download one segment. Returns None if stop_event is set. Raises on HTTP error."""
+    if stop_event.is_set():
+        return None
+    return _fetch_bytes(url, http)
 
 
 # ---------------------------------------------------------------------------
@@ -119,10 +145,12 @@ def _parse_segments(
 def pull_and_process(
     url: str,
     output_dir: Path,
-    state,
-    process_fn,
+    state: StreamingState,
+    process_fn: Callable[[StreamingState, bytes], bytes],
     stop_event: threading.Event,
-    on_segment_written: callable,
+    on_segment_written: Callable[[int], None],
+    max_consecutive_errors: int = 10,
+    max_passthrough: int = 3,
 ) -> None:
     """Blocking HLS pull loop.
 
@@ -135,7 +163,12 @@ def pull_and_process(
     - An unrecoverable error occurs (raises)
 
     Reconnect behaviour on network/HTTP errors: exponential backoff starting
-    at 2 s, capped at 30 s, retries indefinitely until stop_event is set.
+    at 2 s, capped at 30 s. After *max_consecutive_errors* consecutive failures
+    (playlist fetch or segment download combined) the function raises so the
+    caller can mark the session as errored instead of leaking the thread.
+
+    After *max_passthrough* consecutive processing failures the function raises
+    rather than silently falling back to raw passthrough indefinitely.
 
     Args:
         url: HLS playlist URL (master or media).
@@ -146,80 +179,142 @@ def pull_and_process(
             the raw unprocessed bytes are written instead (passthrough).
         stop_event: Set this to cleanly stop the loop.
         on_segment_written: Called with (sequence: int) after each write.
+        max_consecutive_errors: Max consecutive network/fetch failures before raising.
+        max_passthrough: Max consecutive processing failures before raising.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    http = requests.Session()
-    http.headers["User-Agent"] = "video-processor-hls-puller/1.0"
+    with requests.Session() as http:
+        http.headers["User-Agent"] = "video-processor-hls-puller/1.0"
 
-    # Resolve master → media playlist URL once
-    media_url = _resolve_media_url(url, http)
+        # Resolve master → media playlist URL once
+        media_url = _resolve_media_url(url, http)
 
-    seen_seqs: set[int] = set()
-    output_seq = 0          # monotonic counter for output filenames
-    backoff = 2.0
-    consecutive_errors = 0
+        seen_seqs: set[int] = set()
+        output_seq = 0          # monotonic counter for output filenames
+        backoff = 2.0
+        consecutive_errors = 0
+        consecutive_passthrough = 0
 
-    while not stop_event.is_set():
-        try:
-            playlist_text = _fetch_text(media_url, http)
-            segments, is_end = _parse_segments(playlist_text, media_url)
-            consecutive_errors = 0
-            backoff = 2.0
-        except Exception as exc:
-            consecutive_errors += 1
-            wait = min(backoff, 30.0)
-            backoff = min(backoff * 2, 30.0)
-            # Log to stderr; server.py will catch the thread termination if
-            # this keeps failing (but we retry indefinitely here)
-            logger.warning(
-                f"Playlist fetch error (#{consecutive_errors}): {exc}; "
-                f"retrying in {wait:.0f}s",
-                exc_info=True
-            )
-            stop_event.wait(wait)
-            continue
-
-        new_segments = [(seq, seg_url, dur) for seq, seg_url, dur in segments if seq not in seen_seqs]
-
-        for seq, seg_url, _dur in new_segments:
-            if stop_event.is_set():
-                return
-
-            seen_seqs.add(seq)
-
-            # Download
+        while not stop_event.is_set():
             try:
-                raw_bytes = _fetch_bytes(seg_url, http)
-            except Exception as exc:
-                logger.warning(f"Segment download error seq={seq}: {exc}", exc_info=True)
+                playlist_text = _fetch_text(media_url, http)
+                playlist = HLSPlaylist.parse(playlist_text, media_url)
+                consecutive_errors = 0
+                backoff = 2.0
+            except requests.HTTPError as exc:
+                status = exc.response.status_code if exc.response is not None else None
+                if status is not None and status < 500 and status != 429:
+                    # 4xx (except 429 Too Many Requests) — permanent; give up immediately
+                    raise RuntimeError(
+                        f"Permanent HTTP {status} fetching playlist {media_url!r}; giving up"
+                    ) from exc
+                # 5xx or 429 — transient; apply backoff
                 consecutive_errors += 1
                 wait = min(backoff, 30.0)
                 backoff = min(backoff * 2, 30.0)
+                logger.warning(
+                    f"Playlist fetch HTTP error {status} (#{consecutive_errors}); "
+                    f"retrying in {wait:.0f}s",
+                    exc_info=True,
+                )
+                if consecutive_errors >= max_consecutive_errors:
+                    raise RuntimeError(
+                        f"Playlist fetch failed {consecutive_errors} times consecutively; giving up"
+                    ) from exc
+                stop_event.wait(wait)
+                continue
+            except Exception as exc:
+                consecutive_errors += 1
+                wait = min(backoff, 30.0)
+                backoff = min(backoff * 2, 30.0)
+                logger.warning(
+                    f"Playlist fetch error (#{consecutive_errors}): {exc}; "
+                    f"retrying in {wait:.0f}s",
+                    exc_info=True,
+                )
+                if consecutive_errors >= max_consecutive_errors:
+                    raise RuntimeError(
+                        f"Playlist fetch failed {consecutive_errors} times consecutively; giving up"
+                    ) from exc
                 stop_event.wait(wait)
                 continue
 
-            consecutive_errors = 0
-            backoff = 2.0
+            new_segments = _fetch_new_segments(playlist, seen_seqs)
 
-            # Process — passthrough on decode failure
-            try:
-                out_bytes = process_fn(state, raw_bytes)
-            except Exception as exc:
-                # _DecodeError or any unexpected error: write raw
-                logger.warning(f"Passthrough raw bytes due to processing target error on seq={seq}: {exc}", exc_info=True)
-                out_bytes = raw_bytes
+            for seq, seg_url, _dur in new_segments:
+                if stop_event.is_set():
+                    return
 
-            # Write
-            out_path = output_dir / f"seg_{output_seq:04d}.ts"
-            out_path.write_bytes(out_bytes)
-            on_segment_written(output_seq)
-            output_seq += 1
+                seen_seqs.add(seq)
 
-        if is_end:
-            return
+                # Download
+                try:
+                    raw_bytes = _download_segment(seq, seg_url, http, stop_event)
+                except requests.HTTPError as exc:
+                    status = exc.response.status_code if exc.response is not None else None
+                    if status is not None and status < 500 and status != 429:
+                        raise RuntimeError(
+                            f"Permanent HTTP {status} downloading segment seq={seq}; giving up"
+                        ) from exc
+                    logger.warning(
+                        f"Segment download HTTP error {status} seq={seq}", exc_info=True
+                    )
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        raise RuntimeError(
+                            f"Segment download failed {consecutive_errors} times consecutively; giving up"
+                        ) from exc
+                    wait = min(backoff, 30.0)
+                    backoff = min(backoff * 2, 30.0)
+                    stop_event.wait(wait)
+                    continue
+                except Exception as exc:
+                    logger.warning(f"Segment download error seq={seq}: {exc}", exc_info=True)
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        raise RuntimeError(
+                            f"Segment download failed {consecutive_errors} times consecutively; giving up"
+                        ) from exc
+                    wait = min(backoff, 30.0)
+                    backoff = min(backoff * 2, 30.0)
+                    stop_event.wait(wait)
+                    continue
 
-        # Live stream: wait a moment before polling again
-        if not new_segments:
-            stop_event.wait(1.0)
-        # If we got segments, loop immediately to check for more
+                if raw_bytes is None:
+                    # stop_event was set inside _download_segment
+                    return
+
+                consecutive_errors = 0
+                backoff = 2.0
+
+                # Process — passthrough on decode failure, up to max_passthrough times
+                try:
+                    out_bytes = process_fn(state, raw_bytes)
+                    consecutive_passthrough = 0
+                except Exception as exc:
+                    consecutive_passthrough += 1
+                    logger.warning(
+                        f"Passthrough raw bytes due to processing error on seq={seq} "
+                        f"(#{consecutive_passthrough}): {exc}",
+                        exc_info=True,
+                    )
+                    if consecutive_passthrough >= max_passthrough:
+                        raise RuntimeError(
+                            f"Processing failed {consecutive_passthrough} times consecutively; giving up"
+                        ) from exc
+                    out_bytes = raw_bytes
+
+                # Write
+                out_path = output_dir / f"seg_{output_seq:04d}.ts"
+                out_path.write_bytes(out_bytes)
+                on_segment_written(output_seq)
+                output_seq += 1
+
+            if playlist.is_end:
+                return
+
+            # Live stream: wait a moment before polling again
+            if not new_segments:
+                stop_event.wait(1.0)
+            # If we got segments, loop immediately to check for more

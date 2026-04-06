@@ -3,7 +3,14 @@ import sys
 from pathlib import Path
 
 from .models import load_models
-from .pipeline import process_video
+from .pipeline import process_video, VideoOpenError
+
+
+def _odd_int(value: str) -> int:
+    v = int(value)
+    if v % 2 == 0:
+        raise argparse.ArgumentTypeError(f"blur-strength must be an odd integer, got {v}")
+    return v
 
 
 def parse_args() -> argparse.Namespace:
@@ -16,7 +23,7 @@ def parse_args() -> argparse.Namespace:
         help="Run YOLO detection every N frames (default: 5).",
     )
     parser.add_argument(
-        "--blur-strength", type=int, default=51,
+        "--blur-strength", type=_odd_int, default=51,
         help="Gaussian blur kernel size, must be odd (default: 51).",
     )
     parser.add_argument(
@@ -58,17 +65,21 @@ def main() -> None:
     print("Loading dependencies...")
     face_model, plate_model = load_models()
 
-    output_path = process_video(
-        input_path=input_path,
-        output_path=output_path,
-        detection_interval=args.detection_interval,
-        blur_strength=args.blur_strength,
-        conf=args.conf,
-        face_model=face_model,
-        plate_model=plate_model,
-        debug=args.debug,
-        lookback_frames=args.lookback_frames,
-    )
+    try:
+        output_path = process_video(
+            input_path=input_path,
+            output_path=output_path,
+            detection_interval=args.detection_interval,
+            blur_strength=args.blur_strength,
+            conf=args.conf,
+            face_model=face_model,
+            plate_model=plate_model,
+            debug=args.debug,
+            lookback_frames=args.lookback_frames,
+        )
+    except VideoOpenError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
     print(f"Output saved: {output_path}")
 
 

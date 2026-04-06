@@ -1,9 +1,12 @@
+from typing import cast
+
 import numpy as np
 
 from .detection import Box, Detection
 from .track import (
     BoxCategory,
     Track,
+    TrackMode,
     create_kcf_tracker,
     match_detections_to_tracks,
 )
@@ -12,7 +15,7 @@ _SNAP_ALPHA = 0.7  # Weight toward YOLO position vs KCF on detection frames
 
 
 def _blend_box(kcf_box: Box, yolo_box: Box, alpha: float = _SNAP_ALPHA) -> Box:
-    return tuple(int(alpha * y + (1 - alpha) * c) for y, c in zip(yolo_box, kcf_box))
+    return cast(Box, tuple(int(alpha * y + (1 - alpha) * c) for y, c in zip(yolo_box, kcf_box)))
 
 
 class TrackManager:
@@ -107,10 +110,10 @@ class TrackManager:
         result = []
         for t in self._tracks:
             if t.is_coasting:
-                mode = "COAST"
+                mode = TrackMode.COAST
             elif is_detect_frame:
-                mode = "DETECT"
+                mode = TrackMode.DETECT
             else:
-                mode = "TRACK"
+                mode = TrackMode.TRACK
             result.append((t.box, t.track_id, t.category.value, mode))
         return result

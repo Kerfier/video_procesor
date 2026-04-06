@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 from collections import deque
 from dataclasses import dataclass
 
@@ -9,12 +10,21 @@ from ultralytics import YOLO
 
 from .detection import Box, detect_boxes
 from .frame_ops import apply_blur
-from .track import backward_track
+from .track import TrackMode, backward_track
 from .track_manager import TrackManager
 
 
 @dataclass
 class StreamingState:
+    """Per-session pipeline state shared across segment boundaries.
+
+    Thread-safety contract: All mutating operations (push_frame,
+    pop_oldest_entry, pop_oldest_blurred, flush_state, prime_buffer) must be
+    called from a **single thread per session**. The buffers and track manager
+    are not internally synchronised — concurrent access from multiple threads
+    will corrupt state.
+    """
+
     # Config — immutable after creation
     face_model: YOLO
     plate_model: LicensePlateDetector
@@ -28,11 +38,11 @@ class StreamingState:
 
     # Mutable per-stream state
     track_mgr: TrackManager
-    frame_buffer: deque        # deque[np.ndarray]
-    boxes_buffer: deque        # deque[list[Box]]   — mutable lists, backward-track appends
-    index_buffer: deque        # deque[int]
-    detect_flag_buffer: deque  # deque[bool]
-    debug_buffer: deque        # deque[list[tuple[Box, int, str, str]]]
+    frame_buffer: deque[np.ndarray]
+    boxes_buffer: deque[list[Box]]          # mutable lists — backward-track appends
+    index_buffer: deque[int]
+    detect_flag_buffer: deque[bool]
+    debug_buffer: deque[list[tuple[Box, int, str, str]]]
 
     # Global frame counter — persists across segment boundaries
     frame_idx: int = 0
@@ -99,26 +109,37 @@ def push_frame(state: StreamingState, frame: np.ndarray) -> bool:
     # Caller is responsible for popping when this returns True.
     needs_flush = len(state.frame_buffer) == state.lookback_frames
 
-    state.frame_buffer.append(frame.copy())
-    state.boxes_buffer.append(list(boxes))
-    state.index_buffer.append(state.frame_idx)
-    state.detect_flag_buffer.append(is_detect)
-    state.debug_buffer.append(debug_info)
+    # Atomic append: if an exception fires mid-way (e.g. OOM), trim all buffers
+    # back to their pre-append length to preserve the co-index invariant.
+    _pre_len = len(state.frame_buffer)
+    try:
+        state.frame_buffer.append(frame.copy())
+        state.boxes_buffer.append(list(boxes))
+        state.index_buffer.append(state.frame_idx)
+        state.detect_flag_buffer.append(is_detect)
+        state.debug_buffer.append(debug_info)
+    except Exception:
+        for buf in (
+            state.frame_buffer, state.boxes_buffer, state.index_buffer,
+            state.detect_flag_buffer, state.debug_buffer,
+        ):
+            while len(buf) > _pre_len:
+                buf.pop()
+        raise
 
-    # Backward-track for any newly detected tracks
+    # Backward-track for any newly detected tracks.
+    # Build preceding_reversed once by traversing the deque in reverse and
+    # skipping the just-appended current frame — avoids per-index lookups.
     new_tracks = state.track_mgr.pop_new_tracks()
     if new_tracks and len(state.frame_buffer) > 1:
-        preceding_reversed = [
-            state.frame_buffer[-(i + 2)]
-            for i in range(len(state.frame_buffer) - 1)
-        ]
+        preceding_reversed = list(itertools.islice(reversed(state.frame_buffer), 1, None))
         for det_box, category in new_tracks:
             lookback_boxes = backward_track(frame, det_box, preceding_reversed)
             for i, lb_box in enumerate(lookback_boxes):
                 buf_idx = len(state.frame_buffer) - 2 - i
                 state.boxes_buffer[buf_idx].append(lb_box)
                 state.debug_buffer[buf_idx].append(
-                    (lb_box, -1, category.value, "LOOKBACK")
+                    (lb_box, -1, category.value, TrackMode.LOOKBACK)
                 )
 
     state.frame_idx += 1

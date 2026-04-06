@@ -13,6 +13,13 @@ class BoxCategory(str, Enum):
     PLATE = "plate"
 
 
+class TrackMode(str, Enum):
+    DETECT   = "DETECT"
+    TRACK    = "TRACK"
+    COAST    = "COAST"
+    LOOKBACK = "LOOKBACK"
+
+
 @dataclass
 class Track:
     track_id: int

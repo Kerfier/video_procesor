@@ -2,11 +2,15 @@ import cv2
 import numpy as np
 
 from .detection import Box
+from .track import TrackMode
+
+_BOX_EXPAND_FACTOR   = 1.2   # 20% padding around detected box
+_CORNER_RADIUS_RATIO = 0.15  # Rounded-corner radius as fraction of shorter side
 
 _DEBUG_COLORS = {
-    "DETECT": (0, 255, 0),
-    "TRACK": (255, 100, 0),
-    "COAST": (0, 200, 255),
+    TrackMode.DETECT: (0, 255, 0),
+    TrackMode.TRACK:  (255, 100, 0),
+    TrackMode.COAST:  (0, 200, 255),
 }
 
 
@@ -43,8 +47,8 @@ def apply_blur(
         bw = x2 - x1
         bh = y2 - y1
         cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-        bw *= 1.2
-        bh *= 1.2
+        bw *= _BOX_EXPAND_FACTOR
+        bh *= _BOX_EXPAND_FACTOR
         x1 = max(0, int(cx - bw / 2))
         y1 = max(0, int(cy - bh / 2))
         x2 = min(w, int(cx + bw / 2))
@@ -55,7 +59,7 @@ def apply_blur(
         blurred_roi = cv2.GaussianBlur(roi, (k, k), 0)
         # Create rounded rectangle mask
         mask = np.zeros((y2 - y1, x2 - x1), dtype=np.uint8)
-        radius = int(min(bw, bh) * 0.15)
+        radius = int(min(bw, bh) * _CORNER_RADIUS_RATIO)
         cv2.rectangle(mask, (radius, 0), (x2 - x1 - radius, y2 - y1), 255, -1)
         cv2.rectangle(mask, (0, radius), (x2 - x1, y2 - y1 - radius), 255, -1)
         cv2.circle(mask, (radius, radius), radius, 255, -1)
