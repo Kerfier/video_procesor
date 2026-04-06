@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { START_TIMEOUT_MS } from '../constants/streams';
+import { buildStreamFormData } from '../utils/file';
 
 export type StreamStatus = 'processing' | 'done' | 'error';
 
@@ -17,7 +19,7 @@ export interface StreamStatusResponse {
 
 type StartStreamResponse = { streamId: string };
 
-const api = axios.create({ timeout: 30_000 });
+const api = axios.create({ timeout: START_TIMEOUT_MS });
 
 export async function startUrlStream(url: string, params: StreamParams = {}): Promise<string> {
   const { data } = await api.post<StartStreamResponse>('/api/streams/start-url', {
@@ -27,26 +29,37 @@ export async function startUrlStream(url: string, params: StreamParams = {}): Pr
   return data.streamId;
 }
 
+function makeProgressHandler(
+  onUploadProgress?: (percent: number) => void,
+): ((e: { loaded: number; total?: number }) => void) | undefined {
+  if (!onUploadProgress) return undefined;
+  return (e) => {
+    if (e.total) onUploadProgress(Math.round((e.loaded / e.total) * 100));
+  };
+}
+
 export async function uploadFileStream(
   file: File,
   params: StreamParams = {},
   onUploadProgress?: (percent: number) => void,
 ): Promise<string> {
-  const form = new FormData();
-  form.append('video', file, file.name);
-  if (params.detectionInterval !== undefined) form.append('detectionInterval', String(params.detectionInterval));
-  if (params.blurStrength !== undefined) form.append('blurStrength', String(params.blurStrength));
-  if (params.conf !== undefined) form.append('conf', String(params.conf));
-  if (params.lookbackFrames !== undefined) form.append('lookbackFrames', String(params.lookbackFrames));
+  const { data } = await api.post<StartStreamResponse>(
+    '/api/streams/upload',
+    buildStreamFormData(file, params),
+    { timeout: 0, onUploadProgress: makeProgressHandler(onUploadProgress) },
+  );
+  return data.streamId;
+}
 
-  const { data } = await api.post<StartStreamResponse>('/api/streams/upload', form, {
-    timeout: 0,
-    onUploadProgress: onUploadProgress
-      ? (e) => {
-          if (e.total) onUploadProgress(Math.round((e.loaded / e.total) * 100));
-        }
-      : undefined,
-  });
+export async function uploadRawFileStream(
+  file: File,
+  onUploadProgress?: (percent: number) => void,
+): Promise<string> {
+  const { data } = await api.post<StartStreamResponse>(
+    '/api/streams/upload-raw',
+    buildStreamFormData(file),
+    { timeout: 0, onUploadProgress: makeProgressHandler(onUploadProgress) },
+  );
   return data.streamId;
 }
 

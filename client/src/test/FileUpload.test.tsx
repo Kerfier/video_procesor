@@ -78,6 +78,19 @@ describe('FileUpload', () => {
     expect(onSubmit).toHaveBeenCalledWith(file, {});
   });
 
+  it('calls onSubmit with null params when raw mode is enabled', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const { container } = render(<FileUpload onSubmit={onSubmit} isLoading={false} />);
+
+    const file = new File(['video'], 'clip.mp4', { type: 'video/mp4' });
+    await user.upload(getFileInput(container), file);
+    await user.click(screen.getByLabelText(/Raw passthrough/));
+    await user.click(screen.getByRole('button', { name: 'Stream' }));
+
+    expect(onSubmit).toHaveBeenCalledWith(file, null);
+  });
+
   it('passes advanced settings parameters to onSubmit', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
@@ -90,11 +103,11 @@ describe('FileUpload', () => {
     await user.click(screen.getByText('Advanced settings'));
 
     // Fill in advanced settings
-    const detectionInput = screen.getByLabelText(/Detection interval/) as HTMLInputElement;
+    const detectionInput = screen.getByLabelText(/Detection interval/);
     await user.clear(detectionInput);
     await user.type(detectionInput, '5');
 
-    const blurInput = screen.getByLabelText(/Blur strength/) as HTMLInputElement;
+    const blurInput = screen.getByLabelText(/Blur strength/);
     await user.clear(blurInput);
     await user.type(blurInput, '51');
 
@@ -102,7 +115,7 @@ describe('FileUpload', () => {
 
     expect(onSubmit).toHaveBeenCalledWith(file, {
       detectionInterval: 5,
-      blurStrength: 51
+      blurStrength: 51,
     });
   });
 });

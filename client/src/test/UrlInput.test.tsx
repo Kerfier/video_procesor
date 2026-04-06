@@ -70,11 +70,11 @@ describe('UrlInput', () => {
     await user.click(screen.getByText('Advanced settings'));
 
     // Fill in advanced settings
-    const detectionInput = screen.getByLabelText(/Detection interval/) as HTMLInputElement;
+    const detectionInput = screen.getByLabelText(/Detection interval/);
     await user.clear(detectionInput);
     await user.type(detectionInput, '3');
 
-    const blurInput = screen.getByLabelText(/Blur strength/) as HTMLInputElement;
+    const blurInput = screen.getByLabelText(/Blur strength/);
     await user.clear(blurInput);
     await user.type(blurInput, '51');
 
@@ -82,7 +82,7 @@ describe('UrlInput', () => {
 
     expect(onSubmit).toHaveBeenCalledWith('https://example.com/stream.m3u8', {
       detectionInterval: 3,
-      blurStrength: 51
+      blurStrength: 51,
     });
   });
 });

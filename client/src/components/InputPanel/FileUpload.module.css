@@ -35,6 +35,11 @@
   border-color: var(--color-border);
 }
 
+.dropZone.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .hiddenInput {
   position: absolute;
   inset: 0;
@@ -94,10 +99,33 @@
   color: var(--color-text-secondary);
 }
 
+.formatError {
+  font-size: var(--text-sm);
+  color: var(--color-error, #e05252);
+  margin: 0;
+}
+
 .actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.rawToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.rawToggle input {
+  accent-color: var(--color-accent);
+  cursor: pointer;
 }
 
 .advancedToggle {

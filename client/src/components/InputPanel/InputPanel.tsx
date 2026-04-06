@@ -8,11 +8,12 @@ type Tab = 'url' | 'file';
 
 interface InputPanelProps {
   onStartUrl: (url: string, params: StreamParams) => Promise<void>;
-  onUploadFile: (file: File, params: StreamParams) => Promise<void>;
+  onUploadFile: (file: File, params: StreamParams | null) => Promise<void>;
   isLoading: boolean;
+  disabled: boolean;
 }
 
-export function InputPanel({ onStartUrl, onUploadFile, isLoading }: InputPanelProps) {
+export function InputPanel({ onStartUrl, onUploadFile, isLoading, disabled }: InputPanelProps) {
   const [activeTab, setActiveTab] = useState<Tab>('url');
 
   return (
@@ -24,7 +25,7 @@ export function InputPanel({ onStartUrl, onUploadFile, isLoading }: InputPanelPr
           aria-selected={activeTab === 'url'}
           data-active={activeTab === 'url'}
           onClick={() => setActiveTab('url')}
-          disabled={isLoading}
+          disabled={disabled}
         >
           URL
         </button>
@@ -34,7 +35,7 @@ export function InputPanel({ onStartUrl, onUploadFile, isLoading }: InputPanelPr
           aria-selected={activeTab === 'file'}
           data-active={activeTab === 'file'}
           onClick={() => setActiveTab('file')}
-          disabled={isLoading}
+          disabled={disabled}
         >
           File Upload
         </button>
@@ -46,9 +47,9 @@ export function InputPanel({ onStartUrl, onUploadFile, isLoading }: InputPanelPr
 
       <div className={styles.content}>
         {activeTab === 'url' ? (
-          <UrlInput onSubmit={onStartUrl} isLoading={isLoading} />
+          <UrlInput onSubmit={onStartUrl} isLoading={isLoading} disabled={disabled} />
         ) : (
-          <FileUpload onSubmit={onUploadFile} isLoading={isLoading} />
+          <FileUpload onSubmit={onUploadFile} isLoading={isLoading} disabled={disabled} />
         )}
       </div>
     </div>

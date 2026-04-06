@@ -1,3 +1,4 @@
+import type { StreamParams } from './api/streamsApi';
 import { useStream } from './hooks/useStream';
 import { InputPanel } from './components/InputPanel/InputPanel';
 import { StatusBadge } from './components/StatusBadge/StatusBadge';
@@ -5,8 +6,22 @@ import { StreamPlayer } from './components/StreamPlayer/StreamPlayer';
 import styles from './App.module.css';
 
 function App() {
-  const { streamId, statusResponse, isLoading, startError, startUrl, uploadFile, stop } =
-    useStream();
+  const {
+    streamId,
+    statusResponse,
+    isLoading,
+    startError,
+    startUrl,
+    uploadFile,
+    uploadRawFile,
+    stop,
+  } = useStream();
+
+  const handleUpload = (file: File, params: StreamParams | null) =>
+    params === null ? uploadRawFile(file) : uploadFile(file, params);
+
+  const isProcessing =
+    streamId !== null && statusResponse?.status !== 'done' && statusResponse?.status !== 'error';
 
   return (
     <div className={styles.root}>
@@ -16,7 +31,12 @@ function App() {
           <p className={styles.subtitle}>Blur faces and license plates in real-time HLS streams</p>
         </header>
 
-        <InputPanel onStartUrl={startUrl} onUploadFile={uploadFile} isLoading={isLoading} />
+        <InputPanel
+          onStartUrl={startUrl}
+          onUploadFile={handleUpload}
+          isLoading={isLoading}
+          disabled={isLoading || isProcessing}
+        />
 
         {startError && <p className={styles.startError}>{startError}</p>}
 
@@ -29,7 +49,7 @@ function App() {
         )}
 
         {streamId && (statusResponse?.segmentCount ?? 0) >= 3 && (
-          <StreamPlayer streamId={streamId} onStop={() => void stop()} isVisible={true} />
+          <StreamPlayer streamId={streamId} onStop={() => void stop()} />
         )}
       </div>
     </div>

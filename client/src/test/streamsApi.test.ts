@@ -28,7 +28,9 @@ describe('streamsApi', () => {
     it('posts to /api/streams/start-url with url and params', async () => {
       mockApi.post.mockResolvedValueOnce({ data: { streamId: 'abc123' } });
 
-      const result = await startUrlStream('https://example.com/stream.m3u8', { detectionInterval: 3 });
+      const result = await startUrlStream('https://example.com/stream.m3u8', {
+        detectionInterval: 3,
+      });
 
       expect(mockApi.post).toHaveBeenCalledWith('/api/streams/start-url', {
         url: 'https://example.com/stream.m3u8',
@@ -55,7 +57,7 @@ describe('streamsApi', () => {
       const result = await uploadFileStream(file, { blurStrength: 51 });
 
       expect(result).toBe('upload1');
-      expect(appendSpy).toHaveBeenCalledWith('file', file, 'test.mp4');
+      expect(appendSpy).toHaveBeenCalledWith('video', file, 'test.mp4');
       expect(appendSpy).toHaveBeenCalledWith('blurStrength', '51');
       // conf was not provided — should NOT be appended
       const appendedKeys = appendSpy.mock.calls.map((c) => c[0]);

@@ -17,7 +17,9 @@ vi.mock('./hooks/useStream', () => ({
 // hls.js requires a real browser media pipeline — stub it in jsdom
 vi.mock('hls.js', () => ({
   default: class {
-    static isSupported() { return false; }
+    static isSupported() {
+      return false;
+    }
     on() {}
     loadSource() {}
     attachMedia() {}

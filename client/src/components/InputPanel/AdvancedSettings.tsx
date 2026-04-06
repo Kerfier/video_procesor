@@ -15,10 +15,22 @@ interface FieldDef {
 }
 
 const FIELDS: FieldDef[] = [
-  { key: 'detectionInterval', label: 'Detection interval', hint: 'frames between YOLO runs', min: 1, step: 1 },
+  {
+    key: 'detectionInterval',
+    label: 'Detection interval',
+    hint: 'frames between YOLO runs',
+    min: 1,
+    step: 1,
+  },
   { key: 'blurStrength', label: 'Blur strength', hint: 'odd number, e.g. 51', min: 1, step: 2 },
   { key: 'conf', label: 'Confidence', hint: '0.0 – 1.0', min: 0.01, step: 0.05 },
-  { key: 'lookbackFrames', label: 'Lookback frames', hint: 'backward tracking depth', min: 1, step: 1 },
+  {
+    key: 'lookbackFrames',
+    label: 'Lookback frames',
+    hint: 'backward tracking depth',
+    min: 1,
+    step: 1,
+  },
 ];
 
 export function AdvancedSettings({ value, onChange }: AdvancedSettingsProps) {
