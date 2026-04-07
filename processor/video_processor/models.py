@@ -49,5 +49,6 @@ def load_models() -> tuple[YOLO, LicensePlateDetector]:
     face_model = YOLO(str(_ensure_face_model()), task="detect")
     plate_model = LicensePlateDetector(
         detection_model="yolo-v9-t-384-license-plate-end2end",
+        providers=["CPUExecutionProvider"],
     )
     return face_model, plate_model
