@@ -9,7 +9,9 @@ export function useHlsPlayer(streamId: string) {
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video) {
+      return;
+    }
 
     const playlistUrl = `/streams/${streamId}/playlist.m3u8`;
     setHlsError(null);

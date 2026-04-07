@@ -19,7 +19,9 @@ export function useFileInput() {
     e.preventDefault();
     setIsDragOver(false);
     const dropped = e.dataTransfer.files[0];
-    if (!dropped) return;
+    if (!dropped) {
+      return;
+    }
     if (!isAllowed(dropped)) {
       setFormatError(FORMAT_ERROR_MSG);
       return;
@@ -30,7 +32,9 @@ export function useFileInput() {
 
   const handleFileChange = () => {
     const selected = inputRef.current?.files?.[0];
-    if (!selected) return;
+    if (!selected) {
+      return;
+    }
     if (!isAllowed(selected)) {
       setFormatError(FORMAT_ERROR_MSG);
       return;

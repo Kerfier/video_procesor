@@ -16,7 +16,9 @@ export function UrlInput({ onSubmit, isLoading, disabled }: UrlInputProps) {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!url.trim() || isLoading || disabled) return;
+    if (!url.trim() || isLoading || disabled) {
+      return;
+    }
     void onSubmit(url.trim(), params);
   };
 
@@ -55,7 +57,7 @@ export function UrlInput({ onSubmit, isLoading, disabled }: UrlInputProps) {
         Advanced settings
       </button>
 
-      {showAdvanced && <AdvancedSettings value={params} onChange={setParams} />}
+      {showAdvanced && <AdvancedSettings value={params} onChange={setParams} disabled={isLoading} />}
     </form>
   );
 }

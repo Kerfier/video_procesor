@@ -32,9 +32,13 @@ export async function startUrlStream(url: string, params: StreamParams = {}): Pr
 function makeProgressHandler(
   onUploadProgress?: (percent: number) => void,
 ): ((e: { loaded: number; total?: number }) => void) | undefined {
-  if (!onUploadProgress) return undefined;
+  if (!onUploadProgress) {
+    return undefined;
+  }
   return (e) => {
-    if (e.total) onUploadProgress(Math.round((e.loaded / e.total) * 100));
+    if (e.total) {
+      onUploadProgress(Math.round((e.loaded / e.total) * 100));
+    }
   };
 }
 
@@ -72,7 +76,9 @@ export async function deleteStream(streamId: string): Promise<void> {
   try {
     await api.delete(`/api/streams/${streamId}`);
   } catch (err) {
-    if (axios.isAxiosError(err) && err.response?.status === 404) return;
+    if (axios.isAxiosError(err) && err.response?.status === 404) {
+      return;
+    }
     throw err;
   }
 }

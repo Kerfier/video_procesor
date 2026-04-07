@@ -20,12 +20,16 @@ export function FileUpload({ onSubmit, isLoading, disabled }: FileUploadProps) {
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!file || isLoading || disabled) return;
+    if (!file || isLoading || disabled) {
+      return;
+    }
     void onSubmit(file, raw ? null : params);
   };
 
   const handleOpenFilePicker = () => {
-    if (!disabled) inputRef.current?.click();
+    if (!disabled) {
+      inputRef.current?.click();
+    }
   };
 
   return (
@@ -37,7 +41,9 @@ export function FileUpload({ onSubmit, isLoading, disabled }: FileUploadProps) {
         role="button"
         tabIndex={disabled ? -1 : 0}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') handleOpenFilePicker();
+          if (e.key === 'Enter' || e.key === ' ') {
+            handleOpenFilePicker();
+          }
         }}
         aria-label="Drop video file or click to select"
         aria-disabled={disabled}
@@ -104,7 +110,7 @@ export function FileUpload({ onSubmit, isLoading, disabled }: FileUploadProps) {
         </button>
       </div>
 
-      {!raw && showAdvanced && <AdvancedSettings value={params} onChange={setParams} />}
+      {!raw && showAdvanced && <AdvancedSettings value={params} onChange={setParams} disabled={isLoading} />}
     </form>
   );
 }

@@ -17,12 +17,18 @@ export function buildStreamFormData(file: File, params?: StreamParams): FormData
   const form = new FormData();
   form.append('video', file, file.name);
   if (params) {
-    if (params.detectionInterval !== undefined)
+    if (params.detectionInterval !== undefined) {
       form.append('detectionInterval', String(params.detectionInterval));
-    if (params.blurStrength !== undefined) form.append('blurStrength', String(params.blurStrength));
-    if (params.conf !== undefined) form.append('conf', String(params.conf));
-    if (params.lookbackFrames !== undefined)
+    }
+    if (params.blurStrength !== undefined) {
+      form.append('blurStrength', String(params.blurStrength));
+    }
+    if (params.conf !== undefined) {
+      form.append('conf', String(params.conf));
+    }
+    if (params.lookbackFrames !== undefined) {
       form.append('lookbackFrames', String(params.lookbackFrames));
+    }
   }
   return form;
 }

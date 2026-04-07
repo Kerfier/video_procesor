@@ -33,7 +33,5 @@ export function reducer(state: StreamState, action: StreamAction): StreamState {
       return { ...state, statusResponse: action.response };
     case 'RESET':
       return initialState;
-    default:
-      return state;
   }
 }

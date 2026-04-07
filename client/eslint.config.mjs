@@ -73,4 +73,7 @@ export default tseslint.config(
 
   // Must be last — disables formatting rules that conflict with Prettier
   prettierConfig,
+
+  // curly must come after prettierConfig — eslint-config-prettier sets curly:0
+  { rules: { curly: 'error' } },
 );

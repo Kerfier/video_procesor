@@ -28,7 +28,9 @@ export function useStatusPoller(
   };
 
   useEffect(() => {
-    if (!streamId) return;
+    if (!streamId) {
+      return;
+    }
 
     intervalRef.current = setInterval(() => {
       getStreamStatus(streamId)

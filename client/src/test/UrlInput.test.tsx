@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { UrlInput } from '../components/InputPanel/UrlInput';
 
+const DEFAULT_PARAMS = { detectionInterval: 5, blurStrength: 51, conf: 0.25, lookbackFrames: 30 };
+
 describe('UrlInput', () => {
   it('disables submit when URL is empty', () => {
     render(<UrlInput onSubmit={vi.fn()} isLoading={false} />);
@@ -22,7 +24,7 @@ describe('UrlInput', () => {
     render(<UrlInput onSubmit={onSubmit} isLoading={false} />);
     await user.type(screen.getByRole('textbox'), '  https://example.com/stream.m3u8  ');
     await user.click(screen.getByRole('button', { name: 'Start' }));
-    expect(onSubmit).toHaveBeenCalledWith('https://example.com/stream.m3u8', {});
+    expect(onSubmit).toHaveBeenCalledWith('https://example.com/stream.m3u8', DEFAULT_PARAMS);
   });
 
   it('disables submit when isLoading is true', () => {
@@ -56,7 +58,7 @@ describe('UrlInput', () => {
     expect(screen.getByRole('button', { name: 'Starting…' })).toBeDisabled();
 
     // Verify onSubmit was called despite rejection
-    expect(onSubmit).toHaveBeenCalledWith('https://example.com/stream.m3u8', {});
+    expect(onSubmit).toHaveBeenCalledWith('https://example.com/stream.m3u8', DEFAULT_PARAMS);
   });
 
   it('passes advanced settings parameters to onSubmit', async () => {
@@ -81,8 +83,8 @@ describe('UrlInput', () => {
     await user.click(screen.getByRole('button', { name: 'Start' }));
 
     expect(onSubmit).toHaveBeenCalledWith('https://example.com/stream.m3u8', {
+      ...DEFAULT_PARAMS,
       detectionInterval: 3,
-      blurStrength: 51,
     });
   });
 });

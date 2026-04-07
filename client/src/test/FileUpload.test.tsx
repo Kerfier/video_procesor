@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { FileUpload } from '../components/InputPanel/FileUpload';
 
+const DEFAULT_PARAMS = { detectionInterval: 5, blurStrength: 51, conf: 0.25, lookbackFrames: 30 };
+
 function getFileInput(container: HTMLElement) {
   return container.querySelector('input[type="file"]') as HTMLInputElement;
 }
@@ -43,7 +45,7 @@ describe('FileUpload', () => {
     await user.upload(getFileInput(container), file);
     await user.click(screen.getByRole('button', { name: 'Process' }));
 
-    expect(onSubmit).toHaveBeenCalledWith(file, {});
+    expect(onSubmit).toHaveBeenCalledWith(file, DEFAULT_PARAMS);
   });
 
   it('disables submit when isLoading is true', async () => {
@@ -75,7 +77,7 @@ describe('FileUpload', () => {
     expect(screen.getByRole('button', { name: 'Uploading…' })).toBeDisabled();
 
     // Verify onSubmit was called despite rejection
-    expect(onSubmit).toHaveBeenCalledWith(file, {});
+    expect(onSubmit).toHaveBeenCalledWith(file, DEFAULT_PARAMS);
   });
 
   it('calls onSubmit with null params when raw mode is enabled', async () => {
@@ -113,9 +115,6 @@ describe('FileUpload', () => {
 
     await user.click(screen.getByRole('button', { name: 'Process' }));
 
-    expect(onSubmit).toHaveBeenCalledWith(file, {
-      detectionInterval: 5,
-      blurStrength: 51,
-    });
+    expect(onSubmit).toHaveBeenCalledWith(file, DEFAULT_PARAMS);
   });
 });
