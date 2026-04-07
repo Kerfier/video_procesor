@@ -2,13 +2,18 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
+import { validate } from './config/env.validation';
 import { StreamsModule } from './streams/streams.module';
 import { HlsModule } from './hls/hls.module';
 import { PythonClientModule } from './python-client/python-client.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate,
+    }),
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', '..', 'client', 'dist'),
       exclude: ['/api/(.*)'],
@@ -16,6 +21,7 @@ import { PythonClientModule } from './python-client/python-client.module';
     StreamsModule,
     HlsModule,
     PythonClientModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

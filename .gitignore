@@ -36,5 +36,9 @@ skills-lock.json
 **/.env.local
 **/.env.*.local
 
+#Logs
+*.log
+**/*.log
+
 # OS
 .DS_Store

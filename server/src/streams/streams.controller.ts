@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Post,
   Get,
@@ -8,12 +9,33 @@ import {
   HttpCode,
   UploadedFile,
   UseInterceptors,
+  ParseFilePipe,
+  MaxFileSizeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import * as os from 'os';
+import * as path from 'path';
 import { StreamsService } from './streams.service.js';
 import { StartUrlDto } from './dto/start-url.dto.js';
+import { UploadFileDto } from './dto/upload-file.dto.js';
 import type { StreamStatusDto } from './dto/stream-status.dto.js';
+
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024; // 4 GB
+
+const ALLOWED_EXTENSIONS = ['.mp4', '.mov', '.mkv', '.avi'];
+
+function videoFileFilter(
+  _req: unknown,
+  file: Express.Multer.File,
+  cb: (err: Error | null, accept: boolean) => void,
+) {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (ALLOWED_EXTENSIONS.includes(ext)) {
+    cb(null, true);
+  } else {
+    cb(new BadRequestException('Unsupported format. Allowed: MP4, MOV, MKV, AVI'), false);
+  }
+}
 
 @Controller('api/streams')
 export class StreamsController {
@@ -26,12 +48,43 @@ export class StreamsController {
   }
 
   @Post('upload')
-  @UseInterceptors(FileInterceptor('video', { dest: os.tmpdir() }))
+  @UseInterceptors(
+    FileInterceptor('video', {
+      dest: os.tmpdir(),
+      limits: { fileSize: MAX_UPLOAD_BYTES },
+      fileFilter: videoFileFilter,
+    }),
+  )
   async upload(
-    @UploadedFile() file: Express.Multer.File,
-    @Body() body: Partial<StartUrlDto>,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: MAX_UPLOAD_BYTES })],
+      }),
+    )
+    file: Express.Multer.File,
+    @Body() body: UploadFileDto,
   ): Promise<{ streamId: string }> {
     const streamId = await this.streamsService.startFile(file, body);
+    return { streamId };
+  }
+
+  @Post('upload-raw')
+  @UseInterceptors(
+    FileInterceptor('video', {
+      dest: os.tmpdir(),
+      limits: { fileSize: MAX_UPLOAD_BYTES },
+      fileFilter: videoFileFilter,
+    }),
+  )
+  async uploadRaw(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [new MaxFileSizeValidator({ maxSize: MAX_UPLOAD_BYTES })],
+      }),
+    )
+    file: Express.Multer.File,
+  ): Promise<{ streamId: string }> {
+    const streamId = await this.streamsService.startFileRaw(file);
     return { streamId };
   }
 

@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { PythonClientService } from './python-client.service.js';
+import { AnonymizationClientService } from './python-client.service.js';
 
 @Module({
-  providers: [PythonClientService],
-  exports: [PythonClientService],
+  providers: [AnonymizationClientService],
+  exports: [AnonymizationClientService],
 })
 export class PythonClientModule {}

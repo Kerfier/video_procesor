@@ -1,12 +1,16 @@
-export interface SessionParams {
+interface BaseProcessingParams {
   detectionInterval: number;
   blurStrength: number;
   conf: number;
   lookbackFrames: number;
+}
+
+export type SessionParams = BaseProcessingParams & {
+  mode: 'push';
   width: number;
   height: number;
   fps: number;
-}
+};
 
 export interface VideoProbeResult {
   width: number;
@@ -26,6 +30,17 @@ export interface OutputSegment {
   sequence: number;
 }
 
-export type StreamStatus = 'starting' | 'processing' | 'done' | 'error';
+export enum StreamStatus {
+  Starting = 'starting',
+  Processing = 'processing',
+  Done = 'done',
+  Error = 'error',
+}
 
 export type SegmentCallback = (seg: SegmentInfo) => void;
+
+export type UrlSessionParams = BaseProcessingParams & {
+  mode: 'pull';
+  url: string;
+  outputDir: string;
+};
