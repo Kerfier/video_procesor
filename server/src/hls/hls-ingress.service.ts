@@ -45,7 +45,9 @@ export class HlsIngressService {
       try {
         m3u8Text = await fs.promises.readFile(m3u8Path, 'utf8');
       } catch {
-        return; // not written yet
+        // should be swallowed and ignored, because ffmpeg may not have finished writing the playlist
+        // it will be picked up on the next poll
+        return;
       }
       const playlist = hlsParser.parse(m3u8Text) as MediaPlaylist;
       for (const seg of playlist.segments) {
@@ -63,8 +65,8 @@ export class HlsIngressService {
         await sleep(this.config.getOrThrow<number>('STREAM_POLL_MS'), signal);
         await drainPlaylist();
       }
-      await ffmpegPromise; // surface any ffmpeg error
-      await drainPlaylist(); // pick up segments added between last poll and process exit
+      await ffmpegPromise;
+      await drainPlaylist();
     } finally {
       await fs.promises.rm(outDir, { recursive: true, force: true }).catch(() => undefined);
     }

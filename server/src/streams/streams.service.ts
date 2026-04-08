@@ -23,7 +23,7 @@ export class StreamsService implements OnApplicationShutdown {
   }
 
   async startFile(file: Express.Multer.File, body: UploadFileDto): Promise<string> {
-    return this.fileProcessor.startAnonymization(file, body);
+    return this.fileProcessor.startProcessing(file, body);
   }
 
   async startFileRaw(file: Express.Multer.File): Promise<string> {

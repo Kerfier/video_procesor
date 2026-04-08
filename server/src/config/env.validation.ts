@@ -24,6 +24,10 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsNumber()
+  SHUTDOWN_DRAIN_TIMEOUT_MS: number = 10_000;
+
+  @IsOptional()
+  @IsNumber()
   HLS_SEGMENT_DURATION: number = 2;
 
   @IsOptional()

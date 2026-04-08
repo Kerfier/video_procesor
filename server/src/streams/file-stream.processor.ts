@@ -6,7 +6,12 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { AnonymizationClientService } from '../anonymization-client/anonymization-client.service.js';
 import { HlsIngressService } from '../hls/hls-ingress.service.js';
-import { StreamStatus, type SegmentInfo, type SessionParams } from '../types.js';
+import {
+  StreamStatus,
+  type SegmentInfo,
+  type SessionParams,
+  type VideoProbeResult,
+} from '../types.js';
 import type { UploadFileDto } from './dto/upload-file.dto.js';
 import {
   SESSION_REPOSITORY,
@@ -25,7 +30,7 @@ export class FileStreamProcessor implements OnApplicationShutdown {
   private PQueueClass: (new (opts: { concurrency: number }) => IQueue) | null = null;
 
   constructor(
-    @Inject(SESSION_REPOSITORY) private readonly repo: ISessionRepository,
+    @Inject(SESSION_REPOSITORY) private readonly sessionRepository: ISessionRepository,
     private readonly anonymizationClient: AnonymizationClientService,
     private readonly hlsIngress: HlsIngressService,
     private readonly config: ConfigService,
@@ -34,18 +39,19 @@ export class FileStreamProcessor implements OnApplicationShutdown {
   }
 
   async onApplicationShutdown(): Promise<void> {
-    const queues = [...this.repo.values()]
+    const drainTimeout = this.config.get<number>('SHUTDOWN_DRAIN_TIMEOUT_MS');
+    const queues = [...this.sessionRepository.values()]
       .map((s) => s.segmentQueue)
       .filter((q): q is IQueue => q !== null);
     this.logger.log(`Draining ${queues.length} segment queue(s) before shutdown`);
     await Promise.all(
       queues.map((q) =>
-        Promise.race([q.onIdle(), new Promise<void>((r) => setTimeout(r, 10_000))]),
+        Promise.race([q.onIdle(), new Promise<void>((r) => setTimeout(r, drainTimeout))]),
       ),
     );
   }
 
-  async startAnonymization(file: Express.Multer.File, body: UploadFileDto): Promise<string> {
+  async startProcessing(file: Express.Multer.File, body: UploadFileDto): Promise<string> {
     const probeResult = await this.hlsIngress.probeFile(file.path);
     const anonymizationSessionId = await this.anonymizationClient.createPushSession(
       this.buildSessionParams(body, probeResult),
@@ -70,7 +76,7 @@ export class FileStreamProcessor implements OnApplicationShutdown {
     const { streamId, outputDir, queue, abortController } = await this.initFileSession(
       file.originalname,
     );
-    this.repo.create({
+    this.sessionRepository.create({
       streamId,
       anonymizationSessionId,
       status: StreamStatus.Processing,
@@ -83,7 +89,7 @@ export class FileStreamProcessor implements OnApplicationShutdown {
 
     this.run(streamId, file.path, queue, handler).catch((err: unknown) => {
       this.logger.error(`Unhandled error in file stream ${streamId}: ${String(err)}`);
-      this.repo.setStatus(
+      this.sessionRepository.setStatus(
         streamId,
         StreamStatus.Error,
         err instanceof Error ? err.message : String(err),
@@ -99,7 +105,7 @@ export class FileStreamProcessor implements OnApplicationShutdown {
     queue: IQueue,
     handler: ISegmentHandler,
   ): Promise<void> {
-    const session = this.repo.get(streamId);
+    const session = this.sessionRepository.get(streamId);
     if (!session) {
       return;
     }
@@ -110,9 +116,9 @@ export class FileStreamProcessor implements OnApplicationShutdown {
         session.abortController.signal,
       );
       await queue.onIdle();
-      const current = this.repo.get(streamId);
+      const current = this.sessionRepository.get(streamId);
       if (current && current.status !== StreamStatus.Error) {
-        this.repo.setStatus(streamId, StreamStatus.Done);
+        this.sessionRepository.setStatus(streamId, StreamStatus.Done);
       }
     } catch (err) {
       if (!session.abortController.signal.aborted) {
@@ -129,7 +135,7 @@ export class FileStreamProcessor implements OnApplicationShutdown {
     queue: IQueue,
     handler: ISegmentHandler,
   ): void {
-    const session = this.repo.get(streamId);
+    const session = this.sessionRepository.get(streamId);
     if (!session || session.status === StreamStatus.Error) {
       return;
     }
@@ -140,7 +146,7 @@ export class FileStreamProcessor implements OnApplicationShutdown {
         const data = await handler.process(seg);
         const filename = `seg_${String(seg.sequence).padStart(4, '0')}.ts`;
         await fs.promises.writeFile(path.join(session.outputDir, filename), data);
-        this.repo.addSegment(streamId, {
+        this.sessionRepository.addSegment(streamId, {
           filename,
           duration: seg.duration,
           sequence: seg.sequence,
@@ -156,7 +162,7 @@ export class FileStreamProcessor implements OnApplicationShutdown {
   private handleError(streamId: string, err: unknown, anonymizationSessionId?: string): void {
     const message = err instanceof Error ? err.message : String(err);
     this.logger.error(`Stream ${streamId} error: ${message}`);
-    this.repo.setStatus(streamId, StreamStatus.Error, message);
+    this.sessionRepository.setStatus(streamId, StreamStatus.Error, message);
     if (anonymizationSessionId) {
       void this.anonymizationClient.deleteSession(anonymizationSessionId);
     }
@@ -186,10 +192,7 @@ export class FileStreamProcessor implements OnApplicationShutdown {
     return new this.PQueueClass({ concurrency: 1 });
   }
 
-  private buildSessionParams(
-    dto: UploadFileDto,
-    probe: { width: number; height: number; fps: number },
-  ): SessionParams {
+  private buildSessionParams(dto: UploadFileDto, probe: VideoProbeResult): SessionParams {
     return {
       mode: 'push',
       detectionInterval: dto.detectionInterval ?? DEFAULT_PROCESSING_PARAMS.detectionInterval,
