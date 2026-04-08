@@ -1,8 +1,9 @@
 import Hls from 'hls.js';
 import { useEffect, useRef, useState } from 'react';
 import { hlsConfig } from '../config/hlsConfig';
+import type { StreamStatus } from '../api/streamsApi';
 
-export function useHlsPlayer(streamId: string) {
+export function useHlsPlayer(streamId: string, status: StreamStatus) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [hlsError, setHlsError] = useState<string | null>(null);
@@ -48,6 +49,12 @@ export function useHlsPlayer(streamId: string) {
       }
     };
   }, [streamId]);
+
+  useEffect(() => {
+    if (status === 'error' && hlsRef.current) {
+      hlsRef.current.stopLoad();
+    }
+  }, [status]);
 
   return { videoRef, hlsError };
 }

@@ -1,13 +1,15 @@
 import { useHlsPlayer } from '../../hooks/useHlsPlayer';
+import type { StreamStatus } from '../../api/streamsApi';
 import styles from './StreamPlayer.module.css';
 
 interface StreamPlayerProps {
   streamId: string;
+  status: StreamStatus;
   onStop: () => void;
 }
 
-export function StreamPlayer({ streamId, onStop }: StreamPlayerProps) {
-  const { videoRef, hlsError } = useHlsPlayer(streamId);
+export function StreamPlayer({ streamId, status, onStop }: StreamPlayerProps) {
+  const { videoRef, hlsError } = useHlsPlayer(streamId, status);
 
   return (
     <div className={`${styles.container} ${styles.visible}`}>

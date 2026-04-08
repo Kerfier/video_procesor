@@ -49,7 +49,11 @@ function App() {
         )}
 
         {streamId && (statusResponse?.segmentCount ?? 0) >= 3 && (
-          <StreamPlayer streamId={streamId} onStop={() => void stop()} />
+          <StreamPlayer
+            streamId={streamId}
+            status={statusResponse?.status ?? 'processing'}
+            onStop={() => void stop()}
+          />
         )}
       </div>
     </div>
