@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { AnonymizationClientService } from '../python-client/python-client.service.js';
+import { AnonymizationClientService } from '../anonymization-client/anonymization-client.service.js';
 import { HlsIngressService } from '../hls/hls-ingress.service.js';
 import { StreamStatus, type SegmentInfo, type SessionParams } from '../types.js';
 import type { UploadFileDto } from './dto/upload-file.dto.js';
@@ -47,15 +47,15 @@ export class FileStreamProcessor implements OnApplicationShutdown {
 
   async startAnonymization(file: Express.Multer.File, body: UploadFileDto): Promise<string> {
     const probeResult = await this.hlsIngress.probeFile(file.path);
-    const pythonSessionId = await this.anonymizationClient.createSession(
+    const anonymizationSessionId = await this.anonymizationClient.createPushSession(
       this.buildSessionParams(body, probeResult),
     );
     const handler = new AnonymizationSegmentHandler(
       this.anonymizationClient,
-      pythonSessionId,
+      anonymizationSessionId,
       this.logger,
     );
-    return this.startSession(file, handler, pythonSessionId);
+    return this.startSession(file, handler, anonymizationSessionId);
   }
 
   async startPassthrough(file: Express.Multer.File): Promise<string> {
@@ -65,14 +65,14 @@ export class FileStreamProcessor implements OnApplicationShutdown {
   private async startSession(
     file: Express.Multer.File,
     handler: ISegmentHandler,
-    pythonSessionId?: string,
+    anonymizationSessionId?: string,
   ): Promise<string> {
     const { streamId, outputDir, queue, abortController } = await this.initFileSession(
       file.originalname,
     );
     this.repo.create({
       streamId,
-      pythonSessionId,
+      anonymizationSessionId,
       status: StreamStatus.Processing,
       inputType: 'file',
       outputDir,
@@ -104,8 +104,10 @@ export class FileStreamProcessor implements OnApplicationShutdown {
       return;
     }
     try {
-      await this.hlsIngress.segmentAndStream(filePath, (seg) =>
-        this.enqueue(streamId, seg, queue, handler),
+      await this.hlsIngress.segmentAndStream(
+        filePath,
+        (seg) => this.enqueue(streamId, seg, queue, handler),
+        session.abortController.signal,
       );
       await queue.onIdle();
       const current = this.repo.get(streamId);
@@ -113,7 +115,9 @@ export class FileStreamProcessor implements OnApplicationShutdown {
         this.repo.setStatus(streamId, StreamStatus.Done);
       }
     } catch (err) {
-      this.handleError(streamId, err, session.pythonSessionId);
+      if (!session.abortController.signal.aborted) {
+        this.handleError(streamId, err, session.anonymizationSessionId);
+      }
     } finally {
       await fs.promises.unlink(filePath).catch(() => undefined);
     }
@@ -143,18 +147,18 @@ export class FileStreamProcessor implements OnApplicationShutdown {
         });
         this.logger.log(`Stream ${streamId}: segment ${seg.sequence} done`);
       } catch (err: unknown) {
-        this.handleError(streamId, err, session.pythonSessionId);
+        this.handleError(streamId, err, session.anonymizationSessionId);
         queue.clear();
       }
     });
   }
 
-  private handleError(streamId: string, err: unknown, pythonSessionId?: string): void {
+  private handleError(streamId: string, err: unknown, anonymizationSessionId?: string): void {
     const message = err instanceof Error ? err.message : String(err);
     this.logger.error(`Stream ${streamId} error: ${message}`);
     this.repo.setStatus(streamId, StreamStatus.Error, message);
-    if (pythonSessionId) {
-      void this.anonymizationClient.deleteSession(pythonSessionId);
+    if (anonymizationSessionId) {
+      void this.anonymizationClient.deleteSession(anonymizationSessionId);
     }
   }
 

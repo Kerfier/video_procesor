@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
-import { AnonymizationClientService } from '../python-client/python-client.service.js';
+import { AnonymizationClientService } from '../anonymization-client/anonymization-client.service.js';
 import type { StartUrlDto } from './dto/start-url.dto.js';
 import type { UploadFileDto } from './dto/upload-file.dto.js';
 import type { StreamStatusDto } from './dto/stream-status.dto.js';
@@ -39,26 +39,21 @@ export class StreamsService implements OnApplicationShutdown {
     };
   }
 
-  getSession(streamId: string) {
-    return this.repo.getOrThrow(streamId);
-  }
-
   async deleteStream(streamId: string): Promise<void> {
     const session = this.repo.getOrThrow(streamId);
     session.abortController.abort();
     session.segmentQueue?.clear();
-    if (session.pythonSessionId) {
-      await this.anonymizationClient.deleteSession(session.pythonSessionId);
+    if (session.anonymizationSessionId) {
+      await this.anonymizationClient.deleteSession(session.anonymizationSessionId);
     }
     this.repo.delete(streamId);
   }
 
   onApplicationShutdown(): void {
-    this.logger.log(`Aborting ${this.repo.size()} active stream(s)`);
+    this.logger.log('Aborting active stream(s)');
     for (const session of this.repo.values()) {
-      session.abortController.abort();
-      session.segmentQueue?.clear();
+      session.abortController.abort(); // kills ffmpeg for file sessions, stops poll for URL sessions
+      session.segmentQueue?.clear(); // drop pending segments; in-flight segment finishes in FileStreamProcessor.onApplicationShutdown
     }
-    // Queue draining is handled by FileStreamProcessor.onApplicationShutdown
   }
 }

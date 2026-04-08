@@ -19,7 +19,9 @@ export class HealthController {
   @Get('ready')
   @HealthCheck()
   readiness() {
-    const pythonUrl = this.config.get<string>('PYTHON_SERVICE_URL') ?? 'http://localhost:8000';
-    return this.health.check([() => this.http.pingCheck('python-service', `${pythonUrl}/health`)]);
+    const serviceUrl = this.config.get<string>('PYTHON_SERVICE_URL') ?? 'http://localhost:8000';
+    return this.health.check([
+      () => this.http.pingCheck('anonymization-service', `${serviceUrl}/health`),
+    ]);
   }
 }

@@ -11,7 +11,7 @@ export interface IQueue {
 
 export interface StreamSession {
   streamId: string;
-  pythonSessionId?: string;
+  anonymizationSessionId?: string;
   status: StreamStatus;
   inputType: 'url' | 'file';
   outputDir: string;
@@ -29,5 +29,4 @@ export interface ISessionRepository {
   addSegment(streamId: string, segment: OutputSegment): void;
   delete(streamId: string): void;
   values(): IterableIterator<StreamSession>;
-  size(): number;
 }

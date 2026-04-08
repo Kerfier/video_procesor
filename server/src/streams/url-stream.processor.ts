@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
-import { AnonymizationClientService } from '../python-client/python-client.service.js';
+import { AnonymizationClientService } from '../anonymization-client/anonymization-client.service.js';
 import { StreamStatus, type UrlSessionParams } from '../types.js';
 import type { StartUrlDto } from './dto/start-url.dto.js';
 import { SESSION_REPOSITORY, type ISessionRepository } from './session.repository.interface.js';
@@ -42,12 +42,12 @@ export class UrlStreamProcessor {
       conf: body.conf ?? DEFAULT_PROCESSING_PARAMS.conf,
       lookbackFrames: body.lookbackFrames ?? DEFAULT_PROCESSING_PARAMS.lookbackFrames,
     };
-    const pythonSessionId = await this.anonymizationClient.createSession(urlParams);
+    const anonymizationSessionId = await this.anonymizationClient.createPullSession(urlParams);
 
     const abortController = new AbortController();
     this.repo.create({
       streamId,
-      pythonSessionId,
+      anonymizationSessionId,
       status: StreamStatus.Processing,
       inputType: 'url',
       outputDir,
@@ -56,7 +56,7 @@ export class UrlStreamProcessor {
       abortController,
     });
 
-    this.poll(streamId, pythonSessionId, abortController.signal).catch((err: unknown) => {
+    this.poll(streamId, anonymizationSessionId, abortController.signal).catch((err: unknown) => {
       this.logger.error(`Unhandled error in URL poll for stream ${streamId}: ${String(err)}`);
       this.repo.setStatus(
         streamId,
@@ -70,7 +70,7 @@ export class UrlStreamProcessor {
 
   private async poll(
     streamId: string,
-    pythonSessionId: string,
+    anonymizationSessionId: string,
     signal: AbortSignal,
   ): Promise<void> {
     const session = this.repo.get(streamId);
@@ -80,25 +80,31 @@ export class UrlStreamProcessor {
 
     try {
       while (!signal.aborted) {
-        const pyStatus = await this.anonymizationClient.getSessionStatus(pythonSessionId);
+        const status = await this.anonymizationClient.getSessionStatus(anonymizationSessionId);
 
         const known = session.outputSegments.length;
-        for (let seq = known; seq < pyStatus.segmentCount; seq++) {
+        for (let seq = known; seq < status.segmentCount; seq++) {
           const filename = `seg_${String(seq).padStart(4, '0')}.ts`;
-          this.repo.addSegment(streamId, { filename, duration: 2, sequence: seq });
+          this.repo.addSegment(streamId, {
+            filename,
+            duration: this.config.get<number>('HLS_SEGMENT_DURATION') ?? 2,
+            sequence: seq,
+          });
         }
 
-        if (pyStatus.status === StreamStatus.Done) {
+        if (status.status === StreamStatus.Done) {
           this.repo.setStatus(streamId, StreamStatus.Done);
           return;
         }
-        if (pyStatus.status === StreamStatus.Error) {
+        if (status.status === StreamStatus.Error) {
           this.repo.setStatus(
             streamId,
             StreamStatus.Error,
-            pyStatus.error ?? 'Python pull session failed',
+            status.error ?? 'Anonymization pull session failed',
           );
-          this.logger.error(`Stream ${streamId} error from Python: ${pyStatus.error ?? ''}`);
+          this.logger.error(
+            `Stream ${streamId} error from anonymization service: ${status.error ?? ''}`,
+          );
           return;
         }
 

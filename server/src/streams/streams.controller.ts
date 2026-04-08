@@ -37,6 +37,16 @@ function videoFileFilter(
   }
 }
 
+const videoInterceptor = () =>
+  FileInterceptor('video', {
+    dest: os.tmpdir(),
+    limits: { fileSize: MAX_UPLOAD_BYTES },
+    fileFilter: videoFileFilter,
+  });
+
+const videoFilePipe = () =>
+  new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: MAX_UPLOAD_BYTES })] });
+
 @Controller('api/streams')
 export class StreamsController {
   constructor(private readonly streamsService: StreamsService) {}
@@ -48,20 +58,9 @@ export class StreamsController {
   }
 
   @Post('upload')
-  @UseInterceptors(
-    FileInterceptor('video', {
-      dest: os.tmpdir(),
-      limits: { fileSize: MAX_UPLOAD_BYTES },
-      fileFilter: videoFileFilter,
-    }),
-  )
+  @UseInterceptors(videoInterceptor())
   async upload(
-    @UploadedFile(
-      new ParseFilePipe({
-        validators: [new MaxFileSizeValidator({ maxSize: MAX_UPLOAD_BYTES })],
-      }),
-    )
-    file: Express.Multer.File,
+    @UploadedFile(videoFilePipe()) file: Express.Multer.File,
     @Body() body: UploadFileDto,
   ): Promise<{ streamId: string }> {
     const streamId = await this.streamsService.startFile(file, body);
@@ -69,20 +68,9 @@ export class StreamsController {
   }
 
   @Post('upload-raw')
-  @UseInterceptors(
-    FileInterceptor('video', {
-      dest: os.tmpdir(),
-      limits: { fileSize: MAX_UPLOAD_BYTES },
-      fileFilter: videoFileFilter,
-    }),
-  )
+  @UseInterceptors(videoInterceptor())
   async uploadRaw(
-    @UploadedFile(
-      new ParseFilePipe({
-        validators: [new MaxFileSizeValidator({ maxSize: MAX_UPLOAD_BYTES })],
-      }),
-    )
-    file: Express.Multer.File,
+    @UploadedFile(videoFilePipe()) file: Express.Multer.File,
   ): Promise<{ streamId: string }> {
     const streamId = await this.streamsService.startFileRaw(file);
     return { streamId };

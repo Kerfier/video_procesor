@@ -25,6 +25,14 @@ class EnvironmentVariables {
   @IsOptional()
   @IsNumber()
   HLS_SEGMENT_DURATION: number = 2;
+
+  @IsOptional()
+  @IsString()
+  FFMPEG_PATH: string = 'ffmpeg';
+
+  @IsOptional()
+  @IsString()
+  FFPROBE_PATH: string = 'ffprobe';
 }
 
 export function validate(config: Record<string, unknown>) {

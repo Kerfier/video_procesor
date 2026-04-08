@@ -44,8 +44,4 @@ export class InMemorySessionRepository implements ISessionRepository {
   values(): IterableIterator<StreamSession> {
     return this.sessions.values();
   }
-
-  size(): number {
-    return this.sessions.size;
-  }
 }

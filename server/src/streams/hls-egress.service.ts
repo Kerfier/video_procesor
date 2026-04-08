@@ -1,9 +1,9 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, Inject, Logger } from '@nestjs/common';
 import * as path from 'path';
 import * as hlsParser from 'hls-parser';
 import { MediaPlaylist } from 'hls-parser/types.js';
 import { StreamStatus } from '../types.js';
-import { StreamsService } from './streams.service.js';
+import { SESSION_REPOSITORY, type ISessionRepository } from './session.repository.interface.js';
 
 const LIVE_WINDOW = 5;
 const FILENAME_RE = /^seg_\d{4}\.ts$/;
@@ -12,11 +12,11 @@ const FILENAME_RE = /^seg_\d{4}\.ts$/;
 export class HlsEgressService {
   private readonly logger = new Logger(HlsEgressService.name);
 
-  constructor(private readonly streamsService: StreamsService) {}
+  constructor(@Inject(SESSION_REPOSITORY) private readonly repo: ISessionRepository) {}
 
   buildPlaylist(streamId: string): string {
     this.logger.verbose(`Building playlist for stream ${streamId}`);
-    const session = this.streamsService.getSession(streamId);
+    const session = this.repo.getOrThrow(streamId);
     const { outputSegments, status, inputType } = session;
 
     const isLive = inputType === 'url';
@@ -49,7 +49,7 @@ export class HlsEgressService {
       throw new BadRequestException(`Invalid segment filename: ${filename}`);
     }
     this.logger.verbose(`Serving segment ${filename} for stream ${streamId}`);
-    const session = this.streamsService.getSession(streamId);
+    const session = this.repo.getOrThrow(streamId);
     return path.join(session.outputDir, filename);
   }
 }

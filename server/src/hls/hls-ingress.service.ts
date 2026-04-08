@@ -1,43 +1,28 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import ffmpeg from 'fluent-ffmpeg';
 import * as hlsParser from 'hls-parser';
 import type { MediaPlaylist } from 'hls-parser/types.js';
 import type { VideoProbeResult, SegmentCallback } from '../types.js';
 import { sleep } from '../common/sleep.js';
-
-function parseFps(rateStr: string): number {
-  const parts = rateStr.split('/');
-  const num = Number(parts[0]);
-  const den = Number(parts[1]);
-  if (!den || den === 0 || !num) {
-    return 30;
-  }
-  return num / den;
-}
+import { probeVideo, runFfmpegSegment } from '../ffmpeg/ffmpeg.js';
 
 @Injectable()
 export class HlsIngressService {
+  constructor(private readonly config: ConfigService) {}
+
   probeFile(filePath: string): Promise<VideoProbeResult> {
-    return new Promise((resolve, reject) => {
-      ffmpeg.ffprobe(filePath, (err, data) => {
-        if (err) {
-          return reject(new BadRequestException(`ffprobe failed: ${String(err)}`));
-        }
-        const stream = data.streams.find((s) => s.codec_type === 'video');
-        if (!stream) {
-          return reject(new BadRequestException('No video stream found'));
-        }
-        const fps = parseFps(stream.avg_frame_rate ?? '30/1');
-        resolve({ width: stream.width ?? 0, height: stream.height ?? 0, fps });
-      });
-    });
+    return probeVideo(filePath, this.config.get<string>('FFPROBE_PATH'));
   }
 
-  async segmentAndStream(filePath: string, onSegment: SegmentCallback): Promise<void> {
+  async segmentAndStream(
+    filePath: string,
+    onSegment: SegmentCallback,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const outDir = path.join(os.tmpdir(), `hls-${randomUUID()}`);
     await fs.promises.mkdir(outDir, { recursive: true });
 
@@ -46,7 +31,12 @@ export class HlsIngressService {
     let sequence = 0;
     let ffmpegDone = false;
 
-    const ffmpegPromise = this.runFfmpegSegment(filePath, outDir).finally(() => {
+    const ffmpegPromise = runFfmpegSegment(
+      filePath,
+      outDir,
+      this.config.get<string>('FFMPEG_PATH'),
+      signal,
+    ).finally(() => {
       ffmpegDone = true;
     });
 
@@ -70,34 +60,13 @@ export class HlsIngressService {
 
     try {
       while (!ffmpegDone) {
-        await sleep(500);
+        await sleep(this.config.getOrThrow<number>('STREAM_POLL_MS'), signal);
         await drainPlaylist();
       }
-      await ffmpegPromise; // surface any FFmpeg error
+      await ffmpegPromise; // surface any ffmpeg error
       await drainPlaylist(); // pick up segments added between last poll and process exit
     } finally {
       await fs.promises.rm(outDir, { recursive: true, force: true }).catch(() => undefined);
     }
-  }
-
-  private runFfmpegSegment(inputPath: string, outDir: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
-        .outputOptions([
-          '-c:v libx264',
-          '-preset veryfast',
-          '-crf 23',
-          '-c:a aac',
-          '-hls_time 2',
-          '-hls_list_size 0',
-          `-hls_segment_filename ${path.join(outDir, 'seg_%04d.ts')}`,
-        ])
-        .output(path.join(outDir, 'output.m3u8'))
-        .on('end', () => resolve())
-        .on('error', (err: Error) =>
-          reject(new BadRequestException(`ffmpeg segmentation failed: ${err.message}`)),
-        )
-        .run();
-    });
   }
 }

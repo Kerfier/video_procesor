@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { PythonClientModule } from '../python-client/python-client.module.js';
+import { AnonymizationClientModule } from '../anonymization-client/anonymization-client.module.js';
 import { HlsModule } from '../hls/hls.module.js';
 import { StreamsService } from './streams.service.js';
 import { StreamsController } from './streams.controller.js';
@@ -11,7 +11,7 @@ import { UrlStreamProcessor } from './url-stream.processor.js';
 import { FileStreamProcessor } from './file-stream.processor.js';
 
 @Module({
-  imports: [PythonClientModule, HlsModule],
+  imports: [AnonymizationClientModule, HlsModule],
   controllers: [StreamsController, HlsEgressController],
   providers: [
     {

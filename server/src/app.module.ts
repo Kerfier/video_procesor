@@ -5,7 +5,7 @@ import { join } from 'path';
 import { validate } from './config/env.validation';
 import { StreamsModule } from './streams/streams.module';
 import { HlsModule } from './hls/hls.module';
-import { PythonClientModule } from './python-client/python-client.module';
+import { AnonymizationClientModule } from './anonymization-client/anonymization-client.module';
 import { HealthModule } from './health/health.module';
 
 @Module({
@@ -20,7 +20,7 @@ import { HealthModule } from './health/health.module';
     }),
     StreamsModule,
     HlsModule,
-    PythonClientModule,
+    AnonymizationClientModule,
     HealthModule,
   ],
 })
