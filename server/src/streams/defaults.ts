@@ -3,4 +3,5 @@ export const DEFAULT_PROCESSING_PARAMS = {
   blurStrength: 51,
   conf: 0.25,
   lookbackFrames: 30,
+  trackerAlgorithm: 'kcf',
 } as const;

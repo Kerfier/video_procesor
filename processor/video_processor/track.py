@@ -1,11 +1,14 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal
 
 import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from .detection import Box, Detection
+
+TrackerAlgorithm = Literal["kcf", "csrt"]
 
 
 class BoxCategory(str, Enum):
@@ -25,7 +28,7 @@ class Track:
     track_id: int
     category: BoxCategory
     box: Box
-    tracker: cv2.legacy.TrackerKCF
+    tracker: cv2.TrackerKCF | cv2.TrackerCSRT
     frames_since_detect: int = 0
     frames_since_fail: int = 0
     max_coast_cycles: int = 2
@@ -40,9 +43,11 @@ class Track:
         return self.frames_since_detect > self.max_coast_cycles
 
 
-def create_kcf_tracker(frame: np.ndarray, box: Box) -> cv2.legacy.TrackerKCF:
+def create_tracker(
+    frame: np.ndarray, box: Box, algorithm: TrackerAlgorithm = "kcf"
+) -> cv2.TrackerKCF | cv2.TrackerCSRT:
     x1, y1, x2, y2 = box
-    tracker = cv2.legacy.TrackerKCF_create()
+    tracker = cv2.TrackerCSRT.create() if algorithm == "csrt" else cv2.TrackerKCF.create()
     tracker.init(frame, (x1, y1, x2 - x1, y2 - y1))
     return tracker
 
@@ -64,13 +69,14 @@ def backward_track(
     detection_frame: np.ndarray,
     detection_box: Box,
     preceding_frames_reversed: list[np.ndarray],
+    algorithm: TrackerAlgorithm = "kcf",
 ) -> list[Box]:
     """Track backward from detection_frame through preceding frames.
 
     preceding_frames_reversed[0] is frame F-1, [1] is F-2, etc.
     Returns boxes in the same order. Stops when the tracker loses the target.
     """
-    tracker = create_kcf_tracker(detection_frame, detection_box)
+    tracker = create_tracker(detection_frame, detection_box, algorithm)
     results: list[Box] = []
     for frame in preceding_frames_reversed:
         success, rect = tracker.update(frame)

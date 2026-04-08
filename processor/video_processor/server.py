@@ -158,6 +158,7 @@ class CreateSessionRequest(BaseModel):
     blur_strength:      int   = 51
     conf:               float = 0.25
     lookback_frames:    int   = 30
+    tracker_algorithm:  str   = "kcf"
     # Push mode: required
     width:              int | None = None
     height:             int | None = None
@@ -165,6 +166,13 @@ class CreateSessionRequest(BaseModel):
     # Pull mode: required together
     url:                str | None = None
     output_dir:         str | None = None
+
+    @field_validator("tracker_algorithm")
+    @classmethod
+    def _must_be_valid_tracker(cls, v: str) -> str:
+        if v not in {"kcf", "csrt"}:
+            raise ValueError("tracker_algorithm must be 'kcf' or 'csrt'")
+        return v
 
     @field_validator("blur_strength")
     @classmethod
@@ -247,6 +255,7 @@ def create_session(req: CreateSessionRequest) -> CreateSessionResponse:
                 req.blur_strength,
                 req.conf,
                 req.lookback_frames,
+                req.tracker_algorithm,
                 stop_event,
             ),
             daemon=True,
@@ -264,6 +273,7 @@ def create_session(req: CreateSessionRequest) -> CreateSessionResponse:
             width=req.width,
             height=req.height,
             fps=req.fps,
+            tracker_algorithm=req.tracker_algorithm,
         )
         session = _Session(
             state=state,
@@ -405,6 +415,7 @@ def _build_pull_state(
     blur_strength: int,
     conf: float,
     lookback_frames: int,
+    tracker_algorithm: str = "kcf",
 ) -> StreamingState:
     """Probe *url* and create a StreamingState. Raises ValueError on probe failure."""
     width, height, fps = _probe_hls_url(url)
@@ -417,6 +428,7 @@ def _build_pull_state(
         width=width,
         height=height,
         fps=fps,
+        tracker_algorithm=tracker_algorithm,
     )
 
 
@@ -428,6 +440,7 @@ def _run_pull_session(
     blur_strength: int,
     conf: float,
     lookback_frames: int,
+    tracker_algorithm: str,
     stop_event: threading.Event,
 ) -> None:
     from .hls_puller import pull_and_process
@@ -438,7 +451,7 @@ def _run_pull_session(
 
     # Phase 1: probe stream and build state
     try:
-        state = _build_pull_state(url, detection_interval, blur_strength, conf, lookback_frames)
+        state = _build_pull_state(url, detection_interval, blur_strength, conf, lookback_frames, tracker_algorithm)
     except Exception as exc:
         _update_session_status(session_id, "error", error=f"Probe failed: {exc}")
         return

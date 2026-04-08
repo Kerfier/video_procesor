@@ -35,6 +35,7 @@ export class StreamsService implements OnApplicationShutdown {
     return {
       status: session.status,
       segmentCount: session.outputSegments.length,
+      segmentDuration: session.outputSegments[0]?.duration,
       error: session.error,
     };
   }

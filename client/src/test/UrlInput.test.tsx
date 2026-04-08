@@ -74,7 +74,7 @@ describe('UrlInput', () => {
     // Fill in advanced settings
     const detectionInput = screen.getByLabelText(/Detection interval/);
     await user.clear(detectionInput);
-    await user.type(detectionInput, '3');
+    await user.type(detectionInput, '10');
 
     const blurInput = screen.getByLabelText(/Blur strength/);
     await user.clear(blurInput);
@@ -84,7 +84,7 @@ describe('UrlInput', () => {
 
     expect(onSubmit).toHaveBeenCalledWith('https://example.com/stream.m3u8', {
       ...DEFAULT_PARAMS,
-      detectionInterval: 3,
+      detectionInterval: 10,
     });
   });
 });

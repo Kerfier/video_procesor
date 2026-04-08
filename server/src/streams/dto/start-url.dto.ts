@@ -1,4 +1,4 @@
-import { IsUrl, IsOptional, IsInt, IsNumber, Min, Max } from 'class-validator';
+import { IsUrl, IsOptional, IsInt, IsNumber, IsString, IsIn, Min, Max } from 'class-validator';
 
 export class StartUrlDto {
   @IsUrl()
@@ -24,4 +24,9 @@ export class StartUrlDto {
   @IsInt()
   @Min(0)
   lookbackFrames?: number;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['kcf', 'csrt'])
+  trackerAlgorithm?: string;
 }

@@ -42,6 +42,10 @@ def parse_args() -> argparse.Namespace:
         "--debug", action="store_true",
         help="Write an annotated debug video and CSV showing box positions and modes.",
     )
+    parser.add_argument(
+        "--tracker", choices=["kcf", "csrt"], default="kcf",
+        help="Tracking algorithm to use between detection frames (default: kcf).",
+    )
     return parser.parse_args()
 
 
@@ -76,6 +80,7 @@ def main() -> None:
             plate_model=plate_model,
             debug=args.debug,
             lookback_frames=args.lookback_frames,
+            tracker_algorithm=args.tracker,
         )
     except VideoOpenError as exc:
         print(f"Error: {exc}", file=sys.stderr)

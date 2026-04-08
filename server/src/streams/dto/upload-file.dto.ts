@@ -1,4 +1,4 @@
-import { IsOptional, IsInt, IsNumber, Min, Max } from 'class-validator';
+import { IsOptional, IsInt, IsNumber, IsString, IsIn, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class UploadFileDto {
@@ -26,4 +26,9 @@ export class UploadFileDto {
   @IsInt()
   @Min(0)
   lookbackFrames?: number;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['kcf', 'csrt'])
+  trackerAlgorithm?: string;
 }

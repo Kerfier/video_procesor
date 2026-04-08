@@ -10,5 +10,8 @@ export class StreamStatusDto {
   segmentCount: number;
 
   @Expose()
+  segmentDuration?: number;
+
+  @Expose()
   error?: string;
 }

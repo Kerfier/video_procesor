@@ -26,6 +26,7 @@ export class AnonymizationClientService {
         blur_strength: params.blurStrength,
         conf: params.conf,
         lookback_frames: params.lookbackFrames,
+        tracker_algorithm: params.trackerAlgorithm,
         width: params.width,
         height: params.height,
         fps: params.fps,
@@ -43,6 +44,7 @@ export class AnonymizationClientService {
         blur_strength: params.blurStrength,
         conf: params.conf,
         lookback_frames: params.lookbackFrames,
+        tracker_algorithm: params.trackerAlgorithm,
         url: params.url,
         output_dir: params.outputDir,
       });

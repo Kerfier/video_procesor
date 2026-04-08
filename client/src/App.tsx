@@ -11,6 +11,7 @@ function App() {
     statusResponse,
     isLoading,
     startError,
+    hasEnoughSegments,
     startUrl,
     uploadFile,
     uploadRawFile,
@@ -48,13 +49,13 @@ function App() {
           />
         )}
 
-        {streamId && (statusResponse?.segmentCount ?? 0) >= 3 && (
-          <StreamPlayer
-            streamId={streamId}
-            status={statusResponse?.status ?? 'processing'}
-            onStop={() => void stop()}
-          />
-        )}
+        {streamId && hasEnoughSegments && (
+            <StreamPlayer
+              streamId={streamId}
+              status={statusResponse?.status ?? 'processing'}
+              onStop={() => void stop()}
+            />
+          )}
       </div>
     </div>
   );

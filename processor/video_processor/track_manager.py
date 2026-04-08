@@ -6,8 +6,9 @@ from .detection import Box, Detection
 from .track import (
     BoxCategory,
     Track,
+    TrackerAlgorithm,
     TrackMode,
-    create_kcf_tracker,
+    create_tracker,
     match_detections_to_tracks,
 )
 
@@ -24,12 +25,14 @@ class TrackManager:
         max_coast_cycles: int = 4,
         iou_threshold: float = 0.3,
         max_fail_frames: int = 2,
+        tracker_algorithm: TrackerAlgorithm = "kcf",
     ):
         self._tracks: list[Track] = []
         self._next_id: int = 0
         self._max_coast_cycles = max_coast_cycles
         self._iou_threshold = iou_threshold
         self._max_fail_frames = max_fail_frames
+        self._tracker_algorithm = tracker_algorithm
         self._new_track_events: list[tuple[Box, BoxCategory]] = []
 
     def _new_track(
@@ -39,7 +42,7 @@ class TrackManager:
             track_id=self._next_id,
             category=category,
             box=detection.box,
-            tracker=create_kcf_tracker(frame, detection.box),
+            tracker=create_tracker(frame, detection.box, self._tracker_algorithm),
             max_coast_cycles=self._max_coast_cycles,
             max_fail_frames=self._max_fail_frames,
         )
@@ -74,7 +77,7 @@ class TrackManager:
                 track.box = _blend_box(track.box, detections[di].box)
                 track.frames_since_detect = 0
                 track.frames_since_fail = 0
-                track.tracker = create_kcf_tracker(frame, track.box)
+                track.tracker = create_tracker(frame, track.box, self._tracker_algorithm)
                 new_tracks.append(track)
 
             for di in unmatched_dets:

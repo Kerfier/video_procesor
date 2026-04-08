@@ -9,11 +9,13 @@ export interface StreamParams {
   blurStrength?: number;
   conf?: number;
   lookbackFrames?: number;
+  trackerAlgorithm?: 'kcf' | 'csrt';
 }
 
 export interface StreamStatusResponse {
   status: StreamStatus;
   segmentCount: number;
+  segmentDuration?: number;
   error?: string;
 }
 

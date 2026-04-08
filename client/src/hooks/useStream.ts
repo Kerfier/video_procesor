@@ -9,11 +9,18 @@ import type { StreamParams, StreamStatusResponse } from '../api/streamsApi';
 import { useStatusPoller } from './useStatusPoller';
 import { initialState, reducer } from './streamReducer';
 
+function segmentThreshold(duration: number | undefined): number {
+  if (duration === undefined || duration < 4) return 3;
+  if (duration < 8) return 2;
+  return 1;
+}
+
 interface UseStreamReturn {
   streamId: string | null;
   statusResponse: StreamStatusResponse | null;
   isLoading: boolean;
   startError: string | null;
+  hasEnoughSegments: boolean;
   startUrl: (url: string, params: StreamParams) => Promise<void>;
   uploadFile: (file: File, params: StreamParams) => Promise<void>;
   uploadRawFile: (file: File) => Promise<void>;
@@ -63,11 +70,14 @@ export function useStream(): UseStreamReturn {
     dispatch({ type: 'RESET' });
   };
 
+  const { segmentCount, segmentDuration } = state.statusResponse ?? {};
+
   return {
     streamId: state.streamId,
     statusResponse: state.statusResponse,
     isLoading: state.isLoading,
     startError: state.startError,
+    hasEnoughSegments: (segmentCount ?? 0) >= segmentThreshold(segmentDuration),
     startUrl,
     uploadFile,
     uploadRawFile,

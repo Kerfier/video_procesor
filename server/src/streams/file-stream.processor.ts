@@ -199,6 +199,7 @@ export class FileStreamProcessor implements OnApplicationShutdown {
       blurStrength: dto.blurStrength ?? DEFAULT_PROCESSING_PARAMS.blurStrength,
       conf: dto.conf ?? DEFAULT_PROCESSING_PARAMS.conf,
       lookbackFrames: dto.lookbackFrames ?? DEFAULT_PROCESSING_PARAMS.lookbackFrames,
+      trackerAlgorithm: dto.trackerAlgorithm ?? DEFAULT_PROCESSING_PARAMS.trackerAlgorithm,
       width: probe.width,
       height: probe.height,
       fps: probe.fps,

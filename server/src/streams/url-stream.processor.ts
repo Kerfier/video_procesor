@@ -41,6 +41,7 @@ export class UrlStreamProcessor {
       blurStrength: body.blurStrength ?? DEFAULT_PROCESSING_PARAMS.blurStrength,
       conf: body.conf ?? DEFAULT_PROCESSING_PARAMS.conf,
       lookbackFrames: body.lookbackFrames ?? DEFAULT_PROCESSING_PARAMS.lookbackFrames,
+      trackerAlgorithm: body.trackerAlgorithm ?? DEFAULT_PROCESSING_PARAMS.trackerAlgorithm,
     };
     const anonymizationSessionId = await this.anonymizationClient.createPullSession(urlParams);
 

@@ -3,6 +3,7 @@ interface BaseProcessingParams {
   blurStrength: number;
   conf: number;
   lookbackFrames: number;
+  trackerAlgorithm: string;
 }
 
 export type SessionParams = BaseProcessingParams & {

@@ -10,7 +10,7 @@ from ultralytics import YOLO
 
 from .detection import Box, detect_boxes
 from .frame_ops import apply_blur
-from .track import TrackMode, backward_track
+from .track import TrackerAlgorithm, TrackMode, backward_track
 from .track_manager import TrackManager
 
 
@@ -35,6 +35,7 @@ class StreamingState:
     width: int
     height: int
     fps: float
+    tracker_algorithm: TrackerAlgorithm
 
     # Mutable per-stream state
     track_mgr: TrackManager
@@ -60,6 +61,7 @@ def create_session_state(
     width: int,
     height: int,
     fps: float,
+    tracker_algorithm: TrackerAlgorithm = "kcf",
 ) -> StreamingState:
     """Construct a fresh streaming state. Call once per stream session."""
     return StreamingState(
@@ -72,7 +74,8 @@ def create_session_state(
         width=width,
         height=height,
         fps=fps,
-        track_mgr=TrackManager(),
+        tracker_algorithm=tracker_algorithm,
+        track_mgr=TrackManager(tracker_algorithm=tracker_algorithm),
         frame_buffer=deque(),
         boxes_buffer=deque(),
         index_buffer=deque(),
@@ -134,7 +137,7 @@ def push_frame(state: StreamingState, frame: np.ndarray) -> bool:
     if new_tracks and len(state.frame_buffer) > 1:
         preceding_reversed = list(itertools.islice(reversed(state.frame_buffer), 1, None))
         for det_box, category in new_tracks:
-            lookback_boxes = backward_track(frame, det_box, preceding_reversed)
+            lookback_boxes = backward_track(frame, det_box, preceding_reversed, state.tracker_algorithm)
             for i, lb_box in enumerate(lookback_boxes):
                 buf_idx = len(state.frame_buffer) - 2 - i
                 state.boxes_buffer[buf_idx].append(lb_box)

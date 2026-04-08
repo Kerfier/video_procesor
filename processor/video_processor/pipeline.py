@@ -98,6 +98,7 @@ def process_video(
     plate_model: LicensePlateDetector,
     debug: bool = False,
     lookback_frames: int = 60,
+    tracker_algorithm: str = "kcf",
 ) -> Path:
     """Process a single video. Returns path to the final output file."""
     cap, fps, width, height, total_frames = _open_video(input_path)
@@ -115,6 +116,7 @@ def process_video(
         width=width,
         height=height,
         fps=fps,
+        tracker_algorithm=tracker_algorithm,
     )
 
     debug_mgr = (
