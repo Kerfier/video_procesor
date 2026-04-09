@@ -16,7 +16,7 @@ class EnvironmentVariables {
 
   @IsOptional()
   @IsNumber()
-  PYTHON_TIMEOUT_MS: number = 30_000;
+  PYTHON_TIMEOUT_MS: number = 120_000;
 
   @IsOptional()
   @IsNumber()

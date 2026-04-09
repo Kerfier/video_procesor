@@ -25,7 +25,7 @@ import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Iterator, Literal
 
 import cv2
 import imageio_ffmpeg
@@ -154,10 +154,10 @@ async def _idle_cleanup_loop() -> None:
 # ---------------------------------------------------------------------------
 
 class CreateSessionRequest(BaseModel):
-    detection_interval: int   = 5
+    detection_interval: int   = 10
     blur_strength:      int   = 51
     conf:               float = 0.25
-    lookback_frames:    int   = 30
+    lookback_frames:    int   = 20
     tracker_algorithm:  str   = "kcf"
     # Push mode: required
     width:              int | None = None

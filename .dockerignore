@@ -1,0 +1,42 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Node dependencies (rebuilt inside containers)
+node_modules
+**/node_modules
+.pnpm-store
+
+# Python artifacts (rebuilt inside containers)
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.egg-info
+processor/.venv
+processor/build
+
+# Pre-built dist outputs (built fresh in multi-stage)
+client/dist
+server/dist
+server/coverage
+
+# Model weights — large binaries, auto-downloaded at container start
+processor/**/*.pt
+processor/**/*.onnx
+
+# Logs
+*.log
+
+# Local dev and test data
+data/
+local_testing/
+docs/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Docker files themselves
+docker-compose.yml
+docker-compose.*.yml

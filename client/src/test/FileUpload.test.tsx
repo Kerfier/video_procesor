@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { FileUpload } from '../components/InputPanel/FileUpload';
 
-const DEFAULT_PARAMS = { detectionInterval: 5, blurStrength: 51, conf: 0.25, lookbackFrames: 30 };
+const DEFAULT_PARAMS = { detectionInterval: 10, blurStrength: 51, conf: 0.25, lookbackFrames: 20 };
 
 function getFileInput(container: HTMLElement) {
   return container.querySelector('input[type="file"]') as HTMLInputElement;

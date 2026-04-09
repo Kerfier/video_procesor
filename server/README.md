@@ -1,98 +1,256 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Server
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS 11 application that orchestrates video anonymization. It accepts video files and HLS stream URLs from the client, drives the Python processing service, and serves processed HLS segments back to the browser.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Related: [main README](../README.md) · [processor/README.md](../processor/README.md) · [client/README.md](../client/README.md)
 
-## Description
+## Contents
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- [Setup](#setup)
+- [Architecture](#architecture)
+- [Processing flows](#processing-flows)
+- [API reference](#api-reference)
+- [Environment variables](#environment-variables)
+- [Error handling](#error-handling)
 
-## Project setup
+---
+
+## Setup
+
+**Requirements:** Node.js ≥ 24, pnpm ≥ 10
 
 ```bash
-$ pnpm install
+npm install
+npm run start:dev     # development with hot reload
+npm run build         # compile TypeScript → dist/
+npm run start:prod    # production
 ```
 
-## Compile and run the project
+The Python processor must be running at `PYTHON_SERVICE_URL` (default `http://localhost:8000`). See the [processor README](../processor/README.md) for setup.
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+# Tests
+npm test              # unit tests
+npm run test:e2e      # e2e tests
+npm run test:cov      # with coverage
 ```
 
-## Run tests
+---
 
-```bash
-# unit tests
-$ pnpm run test
+## Architecture
 
-# e2e tests
-$ pnpm run test:e2e
+The server is split into focused NestJS modules:
 
-# test coverage
-$ pnpm run test:cov
+```
+AppModule
+├── ConfigModule          — env validation (refuses to start on bad config)
+├── ServeStaticModule     — serves compiled React SPA from client/dist/
+├── HealthModule          — /health and /health/ready endpoints
+├── AnonymizationClientModule  — HTTP client to the Python service
+├── HlsModule             — ffmpeg subprocess for file segmentation
+└── StreamsModule
+    ├── StreamsController       — POST/GET/DELETE /api/streams/*
+    ├── HlsEgressController     — GET /streams/:id/playlist.m3u8 and segments
+    ├── StreamsService          — session repository (in-memory Map)
+    ├── UrlStreamProcessor      — pull mode: polls Python status
+    └── FileStreamProcessor     — push mode: drives ffmpeg + segment queue
 ```
 
-## Deployment
+### Session state
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+All sessions live in an in-memory `Map<streamId, StreamSession>`. Node.js is single-threaded so there are no race conditions.
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+```ts
+interface StreamSession {
+  streamId: string            // UUID, also the output subdirectory name
+  pythonSessionId?: string    // absent for raw passthrough
+  status: 'starting' | 'processing' | 'done' | 'error'
+  inputType: 'url' | 'file'
+  outputDir: string           // OUTPUT_DIR/{streamId}
+  outputSegments: OutputSegment[]
+  segmentQueue: IQueue | null // null in pull mode
+  abortController: AbortController
+  error?: string
+}
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Processed segments are written to `OUTPUT_DIR/{streamId}/seg_XXXX.ts` (4-digit zero-padded sequence).
 
-## Resources
+---
 
-Check out a few resources that may come in handy when working with NestJS:
+## Processing flows
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+### Pull mode — HLS URL
 
-## Support
+The Python service fetches and processes the source HLS stream autonomously. NestJS only polls for progress and serves the resulting files.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```
+Client                NestJS               Python
+  │                     │                    │
+  │  POST /start-url    │                    │
+  │────────────────────►│  POST /sessions    │
+  │                     │───────────────────►│
+  │                     │◄─── session_id ────│
+  │◄── { streamId } ────│                    │
+  │                     │                    │ (fetches + processes HLS in background)
+  │                     │  every 500 ms      │
+  │                     │  GET /sessions/status
+  │                     │───────────────────►│
+  │                     │◄─── segment_count ─│
+  │  every 2 s          │                    │
+  │  GET /status        │                    │
+  │────────────────────►│                    │
+  │◄── segmentCount ────│                    │
+  │                     │                    │
+  │  GET playlist.m3u8  │                    │
+  │────────────────────►│                    │
+  │◄── M3U8 text ───────│                    │
+  │  GET seg_XXXX.ts    │                    │
+  │────────────────────►│ sendFile from disk │
+```
 
-## Stay in touch
+NestJS never touches the segment bytes in pull mode — Python writes them directly to the shared output directory, and NestJS serves them from disk.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### Push mode — file upload
 
-## License
+NestJS drives the full pipeline: ffmpeg segments the uploaded file, each segment is sent to Python, the processed bytes are written to disk.
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+```
+Client           NestJS         ffmpeg        Queue        Python
+  │               │               │             │             │
+  │  POST /upload │               │             │             │
+  │──────────────►│  probe file   │             │             │
+  │               │──────────────►│             │             │
+  │               │◄── w/h/fps ───│             │             │
+  │               │  POST /sessions             │             │
+  │               │────────────────────────────────────────►  │
+  │               │◄────────────────────────── session_id ─── │
+  │◄── streamId ──│               │             │             │
+  │               │  segmentAndStream()         │             │
+  │               │──────────────►│             │             │
+  │               │               │  segment    │             │
+  │               │               │────────────►│             │
+  │               │               │  (non-blocking)           │
+  │               │               │             │  POST /segment
+  │               │               │             │────────────►│
+  │               │               │             │◄─ bytes ────│
+  │               │               │             │  write to disk
+  │  every 2 s    │               │             │             │
+  │  GET /status  │               │             │             │
+  │──────────────►│               │             │             │
+  │◄── count ─────│               │             │             │
+```
+
+The segment queue (`p-queue`, concurrency = 1) sends segments to Python strictly in order. This is required because Python maintains stateful KCF tracker context across segments — out-of-order delivery would corrupt tracking state. The queue also buffers backpressure when ffmpeg produces segments faster than Python processes them.
+
+`p-queue` is ESM-only and is dynamically imported at runtime to avoid top-level CommonJS issues in NestJS.
+
+### Raw passthrough
+
+Identical to push mode, but no Python session is created. The segment handler returns the original bytes unchanged. No processing parameters are accepted.
+
+---
+
+## API reference
+
+### `POST /api/streams/start-url`
+
+Start a pull-mode stream from an HLS URL.
+
+```json
+{
+  "url": "http://host/stream.m3u8",
+  "detectionInterval": 10,
+  "blurStrength": 51,
+  "conf": 0.25,
+  "lookbackFrames": 20,
+  "trackerAlgorithm": "kcf"
+}
+```
+
+Response: `{ "streamId": "<uuid>" }` — returned immediately, processing runs in background.
+
+### `POST /api/streams/upload`
+
+Upload a video file for processing. Multipart form-data: `file` + optional parameters as form fields. Accepted formats: `.mp4`, `.mov`, `.mkv`, `.avi`. Maximum size: 4 GB.
+
+Response: `{ "streamId": "<uuid>" }`
+
+### `POST /api/streams/upload-raw`
+
+Upload a video file without anonymization. Multipart: `file` only.
+
+Response: `{ "streamId": "<uuid>" }`
+
+### `GET /api/streams/:id/status`
+
+```json
+{ "status": "processing", "segmentCount": 5 }
+{ "status": "done", "segmentCount": 12 }
+{ "status": "error", "segmentCount": 3, "error": "message" }
+```
+
+### `DELETE /api/streams/:id`
+
+Abort processing (kills ffmpeg subprocess / stops poll loop), delete the Python session, return 204.
+
+### `GET /streams/:id/playlist.m3u8`
+
+HLS media playlist. Always `Cache-Control: no-cache, no-store`.
+
+- **URL mode:** returns last 5 segments (live sliding window) — HLS.js treats this as a live stream.
+- **File mode:** returns all segments as an `EVENT` playlist; adds `EXT-X-ENDLIST` when status is `Done`.
+
+### `GET /streams/:id/segments/:filename`
+
+Serves a processed `.ts` segment from disk. Filename is validated against `/^seg_\d{4}\.ts$/` to prevent path traversal.
+
+### `GET /health`
+
+Liveness check. Always returns `{ "status": "ok" }`.
+
+### `GET /health/ready`
+
+Readiness check. Pings the Python service `/health`. Returns 503 if Python is unreachable.
+
+---
+
+## Environment variables
+
+Validated at startup via `class-validator` — the application refuses to start if values are invalid.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | NestJS listen port |
+| `PYTHON_SERVICE_URL` | `http://localhost:8000` | Python FastAPI base URL |
+| `OUTPUT_DIR` | `/tmp/streams` | Root directory for processed HLS segments |
+| `PYTHON_TIMEOUT_MS` | `120000` | HTTP timeout for calls to Python |
+| `STREAM_POLL_MS` | `500` | Poll interval for Python status in pull mode |
+| `HLS_SEGMENT_DURATION` | `2` | Target segment duration in seconds |
+| `SHUTDOWN_DRAIN_TIMEOUT_MS` | `10000` | Max ms to wait for segment queues on shutdown |
+| `FFMPEG_PATH` | `ffmpeg` | Path to the ffmpeg binary |
+| `FFPROBE_PATH` | `ffprobe` | Path to the ffprobe binary |
+
+---
+
+## Error handling
+
+### Python service errors
+
+| Python HTTP status | NestJS behaviour |
+|--------------------|-----------------|
+| `404` | Re-throws `NotFoundException` |
+| `422` (segment endpoint only) | Logs warning, passes original segment bytes through |
+| `5xx` / network error | Re-throws `InternalServerErrorException` |
+
+### Stream cancellation
+
+`DELETE /api/streams/:id` calls `abortController.abort()`. The poll loop in `UrlStreamProcessor` checks the signal on each iteration and exits. The ffmpeg child process is killed via its process reference.
+
+### Queue errors
+
+If segment processing throws (other than 422), the queue task clears the pending backlog, sets `session.status = error`, and attempts best-effort Python session deletion.
+
+### Graceful shutdown
+
+`FileStreamProcessor` implements `OnApplicationShutdown`. On SIGTERM it waits up to `SHUTDOWN_DRAIN_TIMEOUT_MS` for all active queues to drain, preventing truncated output files on restarts.

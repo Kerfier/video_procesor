@@ -9,8 +9,8 @@ fi
 
 "$VENV_DIR/bin/pip" install --upgrade pip
 "$VENV_DIR/bin/pip" install .
-"$VENV_DIR/bin/pip" uninstall opencv-python -y 2>/dev/null || true
-"$VENV_DIR/bin/pip" install "opencv-contrib-python==4.13.0.92" --force-reinstall -q
+"$VENV_DIR/bin/pip" uninstall opencv-python opencv-python-headless opencv-contrib-python -y 2>/dev/null || true
+"$VENV_DIR/bin/pip" install opencv-contrib-python==4.13.0.92
 
 echo ""
 echo "Installation complete. Activate the virtual environment first:"

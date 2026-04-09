@@ -67,7 +67,7 @@ export function FileUpload({ onSubmit, isLoading, disabled }: FileUploadProps) {
           <div className={styles.placeholder}>
             <span className={styles.dropIcon}>⬆</span>
             <span className={styles.dropLabel}>Drop a video file or click to browse</span>
-            <span className={styles.dropHint}>MP4, MOV, MKV, AVI</span>
+            <span className={styles.dropHint}>MP4</span>
           </div>
         )}
       </div>

@@ -66,7 +66,7 @@ def detect_boxes(
     Raises DetectionTimeoutError if either model hangs beyond _DETECTION_TIMEOUT_SECONDS.
     """
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        f_face = ex.submit(lambda: face_model(frame, verbose=False, conf=conf)[0])
+        f_face = ex.submit(lambda: face_model(frame, verbose=False, conf=conf, device="cpu")[0])
         f_plate = ex.submit(lambda: plate_model.predict(frame))
         try:
             face_result = f_face.result(timeout=_DETECTION_TIMEOUT_SECONDS)

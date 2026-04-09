@@ -1,7 +1,7 @@
 export const DEFAULT_PROCESSING_PARAMS = {
-  detectionInterval: 5,
+  detectionInterval: 10,
   blurStrength: 51,
   conf: 0.25,
-  lookbackFrames: 30,
+  lookbackFrames: 20,
   trackerAlgorithm: 'kcf',
 } as const;

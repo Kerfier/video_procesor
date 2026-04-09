@@ -19,8 +19,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("input", type=str, help="Path to input .mp4 file.")
     parser.add_argument(
-        "--detection-interval", type=int, default=5,
-        help="Run YOLO detection every N frames (default: 5).",
+        "--detection-interval", type=int, default=10,
+        help="Run YOLO detection every N frames (default: 10).",
     )
     parser.add_argument(
         "--blur-strength", type=_odd_int, default=51,
@@ -31,8 +31,8 @@ def parse_args() -> argparse.Namespace:
         help="Detection confidence threshold (default: 0.25).",
     )
     parser.add_argument(
-        "--lookback-frames", type=int, default=60,
-        help="Number of frames to buffer for backward tracking when a new object is detected (default: 60).",
+        "--lookback-frames", type=int, default=20,
+        help="Number of frames to buffer for backward tracking when a new object is detected (default: 20).",
     )
     parser.add_argument(
         "--output", type=str, default=None,

@@ -14,8 +14,8 @@ if errorlevel 1 exit /b 1
 "%VENV_DIR%\Scripts\pip" install .
 if errorlevel 1 exit /b 1
 
-"%VENV_DIR%\Scripts\pip" uninstall opencv-python -y 2>nul
-"%VENV_DIR%\Scripts\pip" install "opencv-contrib-python==4.13.0.92" --force-reinstall -q
+"%VENV_DIR%\Scripts\pip" uninstall opencv-python opencv-python-headless opencv-contrib-python -y 2>nul
+"%VENV_DIR%\Scripts\pip" install opencv-contrib-python==4.13.0.92
 if errorlevel 1 exit /b 1
 
 echo.
