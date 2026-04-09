@@ -1,4 +1,4 @@
-name: Test Installation
+name: Pull request check
 
 on:
   push:
@@ -21,16 +21,16 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\pip\Cache
-          key: pip-win-py3.11-${{ hashFiles('pyproject.toml') }}
+          key: pip-win-py3.11-${{ hashFiles('processor/pyproject.toml') }}
           restore-keys: pip-win-py3.11-
 
       - name: Run install.bat
         shell: cmd
-        run: install.bat
+        run: cd processor && install.bat
 
       - name: Verify CLI
         shell: cmd
-        run: .venv\Scripts\video-processor --help
+        run: processor\.venv\Scripts\video-processor --help
 
   test-linux:
     name: Linux install smoke test
@@ -46,11 +46,32 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: pip-linux-py3.11-${{ hashFiles('pyproject.toml') }}
+          key: pip-linux-py3.11-${{ hashFiles('processor/pyproject.toml') }}
           restore-keys: pip-linux-py3.11-
 
       - name: Run install.sh
-        run: bash install.sh
+        run: cd processor && bash install.sh
 
       - name: Verify CLI
-        run: .venv/bin/video-processor --help
+        run: processor/.venv/bin/video-processor --help
+
+  client-tests:
+    name: Client unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        working-directory: client
+        run: pnpm install
+
+      - name: Run unit tests
+        working-directory: client
+        run: pnpm test

@@ -1,0 +1,56 @@
+services:
+  processor:
+    build:
+      context: .
+      dockerfile: processor/Dockerfile
+    image: video-processor-processor:local
+    restart: unless-stopped
+    environment:
+      OUTPUT_DIR: /tmp/streams
+      PORT: "8000"
+    volumes:
+      - streams_data:/tmp/streams
+      - model_cache:/root/.cache/video_processor
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: video-processor-server:local
+    restart: unless-stopped
+    environment:
+      PYTHON_SERVICE_URL: http://processor:8000
+      PORT: "3000"
+      OUTPUT_DIR: /tmp/streams
+      PYTHON_TIMEOUT_MS: "120000"
+    ports:
+      - "3000:3000"
+    volumes:
+      - streams_data:/tmp/streams
+    depends_on:
+      processor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  streams_data:
+    driver: local
+  model_cache:
+    driver: local

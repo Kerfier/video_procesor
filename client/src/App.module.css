@@ -1,0 +1,128 @@
+/* ── Design system: CSS variables on :root ──────────────────────────────── */
+:global(:root) {
+  /* Palette */
+  --color-bg:              #0a0a0b;
+  --color-surface:         #141417;
+  --color-surface-raised:  #1c1c21;
+  --color-border:          #2a2a31;
+  --color-border-focus:    #00e5d0;
+
+  --color-accent:          #00e5d0;
+  --color-accent-dim:      #00b8a9;
+  --color-accent-glow:     rgba(0, 229, 208, 0.12);
+
+  --color-text-primary:    #e8e8ec;
+  --color-text-secondary:  #7a7a8c;
+  --color-text-muted:      #4a4a5a;
+
+  --color-status-processing: #f5a623;
+  --color-status-done:       #00e5d0;
+  --color-status-error:      #e55353;
+
+  /* Typography */
+  --font-mono:  'IBM Plex Mono', 'Cascadia Code', monospace;
+  --font-body:  'DM Sans', system-ui, sans-serif;
+
+  --text-xs:   0.75rem;
+  --text-sm:   0.875rem;
+  --text-base: 1rem;
+  --text-lg:   1.125rem;
+  --text-xl:   1.375rem;
+  --text-2xl:  1.75rem;
+
+  /* Spacing (8px base grid) */
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+  --space-16:  64px;
+
+  /* Shape */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  /* Motion */
+  --transition-fast:  80ms ease;
+  --transition-base: 150ms ease;
+  --transition-slow: 300ms ease;
+}
+
+/* ── Global resets ──────────────────────────────────────────────────────── */
+:global(*),
+:global(*::before),
+:global(*::after) {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:global(body) {
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  background-color: var(--color-bg);
+  color: var(--color-text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:global(button) {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+:global(input),
+:global(textarea) {
+  font-family: inherit;
+}
+
+/* ── Root layout ────────────────────────────────────────────────────────── */
+.root {
+  min-height: 100vh;
+  padding: var(--space-10) var(--space-4) var(--space-16);
+}
+
+.inner {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.title {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: -0.02em;
+}
+
+.subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* ── Start error ────────────────────────────────────────────────────────── */
+.startError {
+  font-size: var(--text-sm);
+  color: var(--color-status-error);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-status-error);
+  border-radius: var(--radius-md);
+  background: rgba(229, 83, 83, 0.06);
+}
