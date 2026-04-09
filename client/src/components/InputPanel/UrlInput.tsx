@@ -57,7 +57,9 @@ export function UrlInput({ onSubmit, isLoading, disabled }: UrlInputProps) {
         Advanced settings
       </button>
 
-      {showAdvanced && <AdvancedSettings value={params} onChange={setParams} disabled={isLoading} />}
+      {showAdvanced && (
+        <AdvancedSettings value={params} onChange={setParams} disabled={isLoading} />
+      )}
     </form>
   );
 }

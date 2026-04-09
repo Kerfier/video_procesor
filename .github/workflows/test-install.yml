@@ -1,4 +1,4 @@
-name: Test Installation
+name: Pull request check
 
 on:
   push:
@@ -54,3 +54,24 @@ jobs:
 
       - name: Verify CLI
         run: processor/.venv/bin/video-processor --help
+
+  client-tests:
+    name: Client unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        working-directory: client
+        run: pnpm install
+
+      - name: Run unit tests
+        working-directory: client
+        run: pnpm test

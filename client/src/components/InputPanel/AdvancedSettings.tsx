@@ -61,8 +61,7 @@ const FIELDS: FieldDef[] = [
 function InfoIcon({ tooltip }: { tooltip: string }) {
   return (
     <span className={styles.infoIcon} aria-label={tooltip}>
-      ?
-      <span className={styles.tooltipText}>{tooltip}</span>
+      ?<span className={styles.tooltipText}>{tooltip}</span>
     </span>
   );
 }

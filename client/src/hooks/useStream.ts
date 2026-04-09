@@ -10,8 +10,12 @@ import { useStatusPoller } from './useStatusPoller';
 import { initialState, reducer } from './streamReducer';
 
 function segmentThreshold(duration: number | undefined): number {
-  if (duration === undefined || duration < 4) return 3;
-  if (duration < 8) return 2;
+  if (duration === undefined || duration < 4) {
+    return 3;
+  }
+  if (duration < 8) {
+    return 2;
+  }
   return 1;
 }
 

@@ -110,7 +110,9 @@ export function FileUpload({ onSubmit, isLoading, disabled }: FileUploadProps) {
         </button>
       </div>
 
-      {!raw && showAdvanced && <AdvancedSettings value={params} onChange={setParams} disabled={isLoading} />}
+      {!raw && showAdvanced && (
+        <AdvancedSettings value={params} onChange={setParams} disabled={isLoading} />
+      )}
     </form>
   );
 }

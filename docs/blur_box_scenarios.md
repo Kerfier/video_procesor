@@ -6,7 +6,7 @@ How blur boxes behave from detection through tracking, coasting, and expiration.
 
 The system alternates between two frame types:
 
-- **Detection frames** (every `detection_interval` frames, default 5): YOLO models run to find faces and license plates.
+- **Detection frames** (every `detection_interval` frames, default 10): YOLO models run to find faces and license plates.
 - **Tracking frames** (all other frames): KCF correlation tracker follows previously detected objects.
 
 Each detected object becomes a **Track** with a lifecycle governed by these states:
@@ -34,13 +34,13 @@ Each detected object becomes a **Track** with a lifecycle governed by these stat
 
 | Parameter | Default | Configurable | Effect |
 |-----------|---------|-------------|--------|
-| `detection_interval` | 5 | `--detection-interval` | Run YOLO every N frames |
+| `detection_interval` | 10 | `--detection-interval` | Run YOLO every N frames |
 | `max_coast_cycles` | 4 | No (internal default) | Detection frames without a match before expiring a track |
 | `max_fail_frames` | 2 | No (internal default) | Consecutive tracking-frame KCF failures before removing a track |
 | `iou_threshold` | 0.3 | No (internal default) | Minimum IoU to match a detection to an existing track |
 | `blur_strength` | 51 | `--blur-strength` | Gaussian blur kernel size (must be odd; even values are auto-incremented) |
 | `conf` | 0.25 | `--conf` | YOLO confidence threshold |
-| `lookback_frames` | 60 | `--lookback-frames` | Frame buffer size for backward tracking when a new object is detected |
+| `lookback_frames` | 20 | `--lookback-frames` | Frame buffer size for backward tracking when a new object is detected |
 
 `max_coast_cycles`, `max_fail_frames`, and `iou_threshold` are set as defaults in `TrackManager.__init__` and are not exposed as CLI arguments.
 

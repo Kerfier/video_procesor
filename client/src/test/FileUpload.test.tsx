@@ -107,7 +107,7 @@ describe('FileUpload', () => {
     // Fill in advanced settings
     const detectionInput = screen.getByLabelText(/Detection interval/);
     await user.clear(detectionInput);
-    await user.type(detectionInput, '5');
+    await user.type(detectionInput, '10');
 
     const blurInput = screen.getByLabelText(/Blur strength/);
     await user.clear(blurInput);

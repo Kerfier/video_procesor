@@ -50,12 +50,12 @@ function App() {
         )}
 
         {streamId && hasEnoughSegments && (
-            <StreamPlayer
-              streamId={streamId}
-              status={statusResponse?.status ?? 'processing'}
-              onStop={() => void stop()}
-            />
-          )}
+          <StreamPlayer
+            streamId={streamId}
+            status={statusResponse?.status ?? 'processing'}
+            onStop={() => void stop()}
+          />
+        )}
       </div>
     </div>
   );
