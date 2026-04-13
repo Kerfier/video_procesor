@@ -33,7 +33,7 @@ class TrackManager:
         self._iou_threshold = iou_threshold
         self._max_fail_frames = max_fail_frames
         self._tracker_algorithm = tracker_algorithm
-        self._new_track_events: list[tuple[Box, BoxCategory]] = []
+        self._new_track_events: list[tuple[Box, BoxCategory, float, int]] = []
 
     def _new_track(
         self, frame: np.ndarray, detection: Detection, category: BoxCategory
@@ -45,12 +45,13 @@ class TrackManager:
             tracker=create_tracker(frame, detection.box, self._tracker_algorithm),
             max_coast_cycles=self._max_coast_cycles,
             max_fail_frames=self._max_fail_frames,
+            conf=detection.conf,
         )
         self._next_id += 1
-        self._new_track_events.append((detection.box, category))
+        self._new_track_events.append((detection.box, category, detection.conf, self._next_id - 1))
         return track
 
-    def pop_new_tracks(self) -> list[tuple[Box, BoxCategory]]:
+    def pop_new_tracks(self) -> list[tuple[Box, BoxCategory, float, int]]:
         events = self._new_track_events
         self._new_track_events = []
         return events
@@ -77,6 +78,7 @@ class TrackManager:
                 track.box = _blend_box(track.box, detections[di].box)
                 track.frames_since_detect = 0
                 track.frames_since_fail = 0
+                track.conf = detections[di].conf
                 track.tracker = create_tracker(frame, track.box, self._tracker_algorithm)
                 new_tracks.append(track)
 
@@ -109,7 +111,7 @@ class TrackManager:
     def get_boxes(self) -> list[Box]:
         return [t.box for t in self._tracks]
 
-    def get_debug_info(self, is_detect_frame: bool) -> list[tuple[Box, int, str, str]]:
+    def get_debug_info(self, is_detect_frame: bool) -> list[tuple[Box, int, str, str, float]]:
         result = []
         for t in self._tracks:
             if t.is_coasting:
@@ -118,5 +120,5 @@ class TrackManager:
                 mode = TrackMode.DETECT
             else:
                 mode = TrackMode.TRACK
-            result.append((t.box, t.track_id, t.category.value, mode))
+            result.append((t.box, t.track_id, t.category.value, mode, t.conf))
         return result

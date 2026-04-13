@@ -2,32 +2,29 @@ import cv2
 import numpy as np
 
 from .detection import Box
-from .track import TrackMode
 
 _BOX_EXPAND_FACTOR   = 1.2   # 20% padding around detected box
 _CORNER_RADIUS_RATIO = 0.15  # Rounded-corner radius as fraction of shorter side
 
-_DEBUG_COLORS = {
-    TrackMode.DETECT: (0, 255, 0),
-    TrackMode.TRACK:  (255, 100, 0),
-    TrackMode.COAST:  (0, 200, 255),
+_CATEGORY_COLORS = {
+    "face":  (0, 255, 0),    # green (BGR)
+    "plate": (255, 0, 0),    # blue (BGR)
 }
 
 
 def draw_debug_frame(
     frame: np.ndarray,
-    boxes: list[Box],
+    debug_entries: list[tuple[Box, int, str, str, float]],
     frame_idx: int,
-    mode: str,
 ) -> np.ndarray:
     """Annotate a frame with bounding boxes and per-frame metadata for debugging."""
     out = frame.copy()
-    color = _DEBUG_COLORS.get(mode, (200, 200, 200))
-    for (x1, y1, x2, y2) in boxes:
+    for (x1, y1, x2, y2), _track_id, category, _mode, _conf in debug_entries:
+        color = _CATEGORY_COLORS.get(category, (200, 200, 200))
         cv2.rectangle(out, (x1, y1), (x2, y2), color, 2)
-        cv2.putText(out, f"({x1},{y1})-({x2},{y2})", (x1, max(y1 - 6, 12)),
+        cv2.putText(out, category, (x1, max(y1 - 6, 12)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-    label = f"frame={frame_idx}  mode={mode}  boxes={len(boxes)}"
+    label = f"frame={frame_idx}  boxes={len(debug_entries)}"
     cv2.putText(out, label, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
     cv2.putText(out, label, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 1)
     return out

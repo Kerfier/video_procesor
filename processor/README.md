@@ -27,7 +27,7 @@ bash install.sh
 install.bat
 ```
 
-The script creates a `.venv`, installs all dependencies, then removes any conflicting OpenCV packages and reinstalls only `opencv-contrib-python` (required for the KCF tracker). Models and FFmpeg are downloaded automatically on first run and cached in `~/.cache/video_processor/` (macOS/Linux) or `%LOCALAPPDATA%\video_processor\` (Windows).
+The script creates a `.venv`, installs all dependencies, then removes any conflicting OpenCV packages and reinstalls only `opencv-contrib-python` (required for the CSRT and KCF trackers). Models and FFmpeg are downloaded automatically on first run and cached in `~/.cache/video_processor/` (macOS/Linux) or `%LOCALAPPDATA%\video_processor\` (Windows).
 
 To also install the streaming server extras:
 
@@ -47,12 +47,14 @@ video-processor <input.mp4> [options]
 |----------|---------|-------------|
 | `input` | — | Path to input `.mp4` file |
 | `--output PATH` | same dir, `blurred_` prefix | Output file path or directory |
-| `--detection-interval N` | `10` | Run YOLO every N frames |
+| `--detection-interval N` | `5` | Run YOLO every N frames |
 | `--blur-strength N` | `51` | Gaussian kernel size (must be odd) |
 | `--conf F` | `0.25` | Detection confidence threshold |
-| `--lookback-frames N` | `20` | Frame buffer size for backward tracking |
-| `--tracker` | `kcf` | Tracker to use (`kcf` or `csrt`) |
+| `--lookback-frames N` | `60` | Frame buffer size for backward tracking |
+| `--tracker` | `csrt` | Tracker to use (`kcf` or `csrt`) |
+| `--report-format` | `csv` | Report format (`csv` or `ndjson`) |
 | `--debug` | off | Write annotated debug video and CSV |
+| `--no-video-output` | off | Skip writing the blurred video; generate the detection report only |
 
 ```bash
 # Basic — output saved as blurred_my_video.mp4 next to the input
@@ -64,6 +66,12 @@ video-processor my_video.mp4 --output /tmp/
 # More frequent detection, stronger blur
 video-processor my_video.mp4 --detection-interval 3 --blur-strength 75
 
+# Generate the detection report only, without writing a blurred video
+video-processor my_video.mp4 --no-video-output
+
+# Report only in NDJSON format
+video-processor my_video.mp4 --no-video-output --report-format ndjson
+
 # Enable debug output
 video-processor my_video.mp4 --debug
 ```
@@ -72,7 +80,7 @@ video-processor my_video.mp4 --debug
 
 ## How blurring works
 
-The pipeline combines periodic YOLO detection with continuous KCF tracking to blur every face and license plate in every frame, without running the expensive neural network on each frame.
+The pipeline combines periodic YOLO detection with continuous CSRT tracking to blur every face and license plate in every frame, without running the expensive neural network on each frame.
 
 ### Detection
 
@@ -87,13 +95,13 @@ Each model returns a list of bounding boxes with confidence scores. Boxes with c
 
 Detection results are matched to existing tracks using the **Hungarian algorithm** on an IoU cost matrix. A pair is accepted only if raw IoU ≥ 0.3. The match score is `iou × conf`. Detections with no matching track create new tracks.
 
-On matched frames, the track box is blended: `0.7 × YOLO + 0.3 × KCF`, then the KCF tracker is reinitialized on the blended position. This avoids hard snapping and keeps the tracker aligned with the detector.
+On matched frames, the track box is blended: `0.7 × YOLO + 0.3 × tracker`, then the tracker is reinitialized on the blended position. This avoids hard snapping and keeps the tracker aligned with the detector.
 
 ### Tracking
 
-Between detection frames, each active track is advanced by one frame using **OpenCV KCF** (or **CSRT** if `--tracker-algorithm csrt`). KCF is fast and CPU-only. CSRT is slower but more accurate on non-rigid deformations.
+Between detection frames, each active track is advanced by one frame using **OpenCV CSRT** (or **KCF** if `--tracker kcf`). CSRT is more accurate on non-rigid deformations. KCF is faster but less accurate.
 
-- Tracks where the KCF tracker reports failure are dropped immediately.
+- Tracks where the tracker reports failure are dropped immediately.
 - Tracks that go `max_coast_cycles` (4) detection intervals without a matching detection expire.
 
 ### Backward tracking
@@ -133,7 +141,7 @@ Input file
    │                                         │      └─ backward track │
    │                                         └───────────────────────┘
    │
-   ├─ Every other frame ────────────────► KCF/CSRT advance each track
+   ├─ Every other frame ────────────────► CSRT/KCF advance each track
    │
    └─ Every frame ──────────────────────► Apply Gaussian blur per box
                                        └► Write frame to output
@@ -163,7 +171,7 @@ When installed with `.[server]` extras, the processor runs as a FastAPI service 
 
 ### Push mode (file upload)
 
-NestJS sends individual `.ts` segments one at a time. The processor maintains stateful KCF tracker context across segments so tracking is continuous across segment boundaries.
+NestJS sends individual `.ts` segments one at a time. The processor maintains stateful tracker context across segments so tracking is continuous across segment boundaries.
 
 ```bash
 # Create session
@@ -207,30 +215,12 @@ Sessions idle for more than 10 minutes are cleaned up automatically.
 
 ## Debug mode
 
-`--debug` produces two extra files alongside the output:
+`--debug` writes `debug_<input>.mp4` alongside the output — an annotated video with color-coded bounding boxes:
 
-**`debug_<input>.mp4`** — annotated video with color-coded bounding boxes:
-
-| Color | Mode | Meaning |
-|-------|------|---------|
-| Green | `DETECT` | Frame where YOLO ran |
-| Blue-orange | `TRACK` | Frame using KCF output |
-| Cyan | `COAST` | Track kept alive without a fresh detection |
-| Gray | `LOOKBACK` | Box filled in retroactively |
-
-**`debug_<input>.csv`** — per-frame box data:
-
-```
-frame,mode,track_id,category,x1,y1,x2,y2
-0,DETECT,0,face,120,45,210,180
-1,TRACK,0,face,121,46,211,181
-```
-
-Visualize the CSV overlaid on the original video:
-
-```bash
-python scripts/visualize_csv.py debug_input.csv input.mp4
-```
+| Color | Meaning |
+|-------|---------|
+| Green | Face |
+| Blue | License plate |
 
 ---
 
@@ -243,7 +233,7 @@ python scripts/visualize_csv.py debug_input.csv input.mp4
 | `detection.py` | Parallel YOLO inference, box extraction and validation |
 | `models.py` | Model loading — face ONNX auto-downloaded from GitHub, plate via open_image_models |
 | `track_manager.py` | Track lifecycle: create, match (IoU ≥ 0.3), coast, expire |
-| `track.py` | `Track` dataclass, KCF tracker creation, `backward_track()` |
+| `track.py` | `Track` dataclass, CSRT/KCF tracker creation, `backward_track()` |
 | `frame_ops.py` | `apply_blur()` and `draw_debug_frame()` |
 | `audio.py` | Bundled FFmpeg audio detection and mux |
 | `streaming.py` | Stateful frame-level pipeline for streaming (`push_frame`, `flush_state`) |
