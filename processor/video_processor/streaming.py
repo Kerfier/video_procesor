@@ -10,8 +10,10 @@ from ultralytics import YOLO
 
 from .detection import Box, detect_boxes
 from .frame_ops import apply_blur
-from .track import TrackerAlgorithm, TrackMode, backward_track
+from .track import TrackerAlgorithm, TrackMode, backward_track, iou
 from .track_manager import TrackManager
+
+_LOOKBACK_DEDUP_IOU = 0.1  # Lower than match threshold — coasting boxes drift
 
 
 @dataclass
@@ -43,7 +45,7 @@ class StreamingState:
     boxes_buffer: deque[list[Box]]          # mutable lists — backward-track appends
     index_buffer: deque[int]
     detect_flag_buffer: deque[bool]
-    debug_buffer: deque[list[tuple[Box, int, str, str]]]
+    debug_buffer: deque[list[tuple[Box, int, str, str, float]]]
 
     # Global frame counter — persists across segment boundaries
     frame_idx: int = 0
@@ -136,13 +138,16 @@ def push_frame(state: StreamingState, frame: np.ndarray) -> bool:
     new_tracks = state.track_mgr.pop_new_tracks()
     if new_tracks and len(state.frame_buffer) > 1:
         preceding_reversed = list(itertools.islice(reversed(state.frame_buffer), 1, None))
-        for det_box, category in new_tracks:
+        for det_box, category, det_conf, track_id in new_tracks:
             lookback_boxes = backward_track(frame, det_box, preceding_reversed, state.tracker_algorithm)
             for i, lb_box in enumerate(lookback_boxes):
                 buf_idx = len(state.frame_buffer) - 2 - i
+                if any(iou(lb_box, existing) >= _LOOKBACK_DEDUP_IOU
+                       for existing in state.boxes_buffer[buf_idx]):
+                    break
                 state.boxes_buffer[buf_idx].append(lb_box)
                 state.debug_buffer[buf_idx].append(
-                    (lb_box, -1, category.value, TrackMode.LOOKBACK)
+                    (lb_box, track_id, category.value, TrackMode.LOOKBACK, det_conf)
                 )
 
     state.frame_idx += 1

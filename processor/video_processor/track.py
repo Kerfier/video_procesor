@@ -33,6 +33,7 @@ class Track:
     frames_since_fail: int = 0
     max_coast_cycles: int = 2
     max_fail_frames: int = 2
+    conf: float = 0.0
 
     @property
     def is_coasting(self) -> bool:
